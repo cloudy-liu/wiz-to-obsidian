@@ -22,6 +22,150 @@ def import_or_fail(testcase: unittest.TestCase, module_name: str):
 
 
 class WizLocalTests(unittest.TestCase):
+    def test_scan_local_wiz_metadata_skips_bodies_and_binary_payloads(self) -> None:
+        module = import_or_fail(self, "wiz_to_obsidian.wiz_local")
+
+        class FakeSource:
+            def __init__(self, stores):
+                self._stores = stores
+
+            def iter_store_values(self, db_name: str, store_name: str, *, skip_bad: bool = False):
+                yield from self._stores.get((db_name, store_name), [])
+
+        stores = {
+            ("wiz-account", "accounts"): [
+                {
+                    "userGuid": "user-1",
+                    "kbGuid": "kb-1",
+                    "displayName": "Cloudy",
+                    "userId": "user@example.com",
+                }
+            ],
+            ("wiz-user-1", "kbs"): [{"kbGuid": "kb-1", "name": "Main KB", "type": "person"}],
+            ("wiz-user-1", "folders"): [],
+            ("wiz-user-1", "docs"): [
+                {
+                    "docGuid": "doc-1",
+                    "title": "Roadmap",
+                    "category": "/",
+                    "type": "document",
+                }
+            ],
+            ("wiz-user-1", "attachments"): [
+                {
+                    "docGuid": "doc-1",
+                    "attGuid": "att-1",
+                    "name": "spec.pdf",
+                    "dataSize": 2048,
+                }
+            ],
+            ("wiz-user-1", "data"): [
+                {
+                    "kbGuid": "kb-1",
+                    "docGuid": "doc-1",
+                    "dataId": "index.html",
+                    "dataType": "html",
+                    "data": b"<p>Hello</p>",
+                }
+            ],
+            ("wiz-editor-ot", "docs"): [
+                {"id": "kb-1:doc-1", "data": b'{"blocks":[{"id":"1","type":"text","text":[{"insert":"Roadmap"}]}]}'}
+            ],
+        }
+
+        inventory = module.scan_local_wiz_metadata(source=FakeSource(stores))
+
+        self.assertEqual(1, len(inventory.notes))
+        self.assertFalse(inventory.notes[0].body.has_content)
+        self.assertEqual(0, inventory.resource_count)
+        self.assertEqual(0, inventory.attachment_count)
+        self.assertEqual(1, len(inventory.notes[0].attachments))
+
+    def test_load_local_note_payloads_only_loads_selected_doc_guids(self) -> None:
+        module = import_or_fail(self, "wiz_to_obsidian.wiz_local")
+
+        class FakeSource:
+            def __init__(self, stores):
+                self._stores = stores
+
+            def iter_store_values(self, db_name: str, store_name: str, *, skip_bad: bool = False):
+                yield from self._stores.get((db_name, store_name), [])
+
+        stores = {
+            ("wiz-account", "accounts"): [
+                {
+                    "userGuid": "user-1",
+                    "kbGuid": "kb-1",
+                    "displayName": "Cloudy",
+                    "userId": "user@example.com",
+                }
+            ],
+            ("wiz-user-1", "kbs"): [{"kbGuid": "kb-1", "name": "Main KB", "type": "person"}],
+            ("wiz-user-1", "folders"): [],
+            ("wiz-user-1", "docs"): [
+                {
+                    "docGuid": "doc-1",
+                    "title": "Roadmap",
+                    "category": "/",
+                    "type": "collaboration",
+                },
+                {
+                    "docGuid": "doc-2",
+                    "title": "Imported Page",
+                    "category": "/",
+                    "type": "document",
+                },
+            ],
+            ("wiz-user-1", "attachments"): [],
+            ("wiz-user-1", "data"): [
+                {
+                    "kbGuid": "kb-1",
+                    "docGuid": "doc-1",
+                    "dataId": "cover.png",
+                    "dataType": "resource",
+                    "data": b"img",
+                },
+                {
+                    "kbGuid": "kb-1",
+                    "docGuid": "doc-2",
+                    "dataId": "index.html",
+                    "dataType": "html",
+                    "data": b"<p>Hello</p>",
+                },
+            ],
+            ("wiz-editor-ot", "docs"): [
+                {
+                    "id": "kb-1:doc-1",
+                    "data": json.dumps(
+                        {
+                            "blocks": [
+                                {"id": "h1", "type": "text", "heading": 1, "text": [{"insert": "Roadmap"}]},
+                                {
+                                    "id": "img1",
+                                    "type": "embed",
+                                    "embedType": "image",
+                                    "embedData": {"src": "cover.png"},
+                                },
+                            ]
+                        }
+                    ).encode("utf-8"),
+                }
+            ],
+        }
+
+        metadata_inventory = module.scan_local_wiz_metadata(source=FakeSource(stores))
+        inventory = module.load_local_note_payloads(
+            metadata_inventory=metadata_inventory,
+            doc_guids={"doc-1"},
+            source=FakeSource(stores),
+        )
+
+        note_by_guid = {note.doc_guid: note for note in inventory.notes}
+        self.assertTrue(note_by_guid["doc-1"].body.has_meaningful_content)
+        self.assertFalse(note_by_guid["doc-2"].body.has_content)
+        self.assertIn("wiz-resource://doc-1/cover.png", inventory.resource_bytes_by_key)
+        self.assertNotIn("wiz-resource://doc-2/index.html", inventory.resource_bytes_by_key)
+
     def test_build_inventory_joins_docs_folders_tags_and_attachments(self) -> None:
         module = import_or_fail(self, "wiz_to_obsidian.wiz_local")
 

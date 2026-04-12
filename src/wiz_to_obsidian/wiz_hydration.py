@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 import re
+import threading
 from typing import Callable, Protocol, Sequence
 
 from .markdown_export import make_attachment_key, make_resource_key
@@ -34,6 +37,7 @@ class WizContentClient(Protocol):
 class HydrationResult:
     inventory: Inventory
     summary: dict[str, int]
+    note_repair_status: dict[str, bool] | None = None
 
 
 class CompositeWizContentClient:
@@ -135,14 +139,157 @@ def _attachment_keys(note: WizNote, attachment: AttachmentRecord) -> list[str]:
     return keys
 
 
+_CONCURRENT_MAX_WORKERS = 6
+
+
+def _hydrate_single_note(
+    note: WizNote,
+    client: WizContentClient,
+    existing_resource_keys: set[str],
+    existing_attachment_keys: set[str],
+    force_refresh_note_body: bool,
+) -> _SingleNoteHydrationResult:
+    body = note.body
+    resource_names = _iter_resource_names(body)
+    missing_resource_names = {
+        resource_name
+        for resource_name in resource_names
+        if make_resource_key(note.doc_guid, resource_name) not in existing_resource_keys
+    }
+
+    local_summary = {
+        "hydrated_notes": 0,
+        "hydrated_resources": 0,
+        "hydrated_attachments": 0,
+        "hydration_failures": 0,
+    }
+    new_resources: dict[str, bytes] = {}
+    new_attachments: dict[str, bytes] = {}
+    body_changed = False
+
+    if force_refresh_note_body or not body.has_meaningful_content or missing_resource_names:
+        fetched_body, fetch_failed = _safe_fetch_note_body(client, note, local_summary)
+        if fetched_body.has_meaningful_content and fetched_body != body:
+            body = fetched_body
+            local_summary["hydrated_notes"] += 1
+            body_changed = True
+        resource_names.update(_iter_resource_names(fetched_body))
+
+    for resource_name in sorted(resource_names):
+        resource_key = make_resource_key(note.doc_guid, resource_name)
+        if resource_key in existing_resource_keys or resource_key in new_resources:
+            continue
+        payload = _safe_fetch_resource(client, note, resource_name, local_summary)
+        if payload is None:
+            continue
+        new_resources[resource_key] = payload
+        local_summary["hydrated_resources"] += 1
+
+    for attachment in note.attachments:
+        candidate_keys = _attachment_keys(note, attachment)
+        if any(key in existing_attachment_keys or key in new_attachments for key in candidate_keys):
+            continue
+        payload = _safe_fetch_attachment(client, note, attachment, local_summary)
+        if payload is None:
+            continue
+        for key in candidate_keys:
+            new_attachments[key] = payload
+        local_summary["hydrated_attachments"] += 1
+
+    updated_note = replace(note, body=body) if body_changed else note
+
+    needs_repair = (
+        not body.has_meaningful_content
+        or any(
+            make_resource_key(note.doc_guid, name) not in existing_resource_keys
+            and make_resource_key(note.doc_guid, name) not in new_resources
+            for name in _iter_resource_names(body)
+        )
+        or any(
+            key not in existing_attachment_keys and key not in new_attachments
+            for key in _all_attachment_candidate_keys(note)
+        )
+    )
+
+    return _SingleNoteHydrationResult(
+        note=updated_note,
+        new_resources=new_resources,
+        new_attachments=new_attachments,
+        summary=local_summary,
+        needs_repair=needs_repair,
+    )
+
+
+@dataclass
+class _SingleNoteHydrationResult:
+    note: WizNote
+    new_resources: dict[str, bytes]
+    new_attachments: dict[str, bytes]
+    summary: dict[str, int]
+    needs_repair: bool
+
+
+def _safe_fetch_note_body(
+    client: WizContentClient, note: WizNote, summary: dict[str, int]
+) -> tuple[NoteBody, bool]:
+    for attempt in range(FETCH_RETRY_ATTEMPTS):
+        try:
+            return client.fetch_note_body(note), False
+        except Exception:
+            if attempt == FETCH_RETRY_ATTEMPTS - 1:
+                summary["hydration_failures"] += 1
+                return NoteBody(), True
+    return NoteBody(), False
+
+
+def _safe_fetch_resource(
+    client: WizContentClient, note: WizNote, resource_name: str, summary: dict[str, int]
+) -> bytes | None:
+    for attempt in range(FETCH_RETRY_ATTEMPTS):
+        try:
+            payload = client.fetch_resource(note, resource_name)
+        except Exception:
+            if attempt == FETCH_RETRY_ATTEMPTS - 1:
+                summary["hydration_failures"] += 1
+                return None
+            continue
+        if _is_placeholder_resource_payload(payload):
+            if attempt == FETCH_RETRY_ATTEMPTS - 1:
+                summary["hydration_failures"] += 1
+                return None
+            continue
+        return payload
+    return None
+
+
+def _safe_fetch_attachment(
+    client: WizContentClient, note: WizNote, attachment: AttachmentRecord, summary: dict[str, int]
+) -> bytes | None:
+    for attempt in range(FETCH_RETRY_ATTEMPTS):
+        try:
+            return client.fetch_attachment(note, attachment)
+        except Exception:
+            if attempt == FETCH_RETRY_ATTEMPTS - 1:
+                summary["hydration_failures"] += 1
+                return None
+    return None
+
+
+def _all_attachment_candidate_keys(note: WizNote) -> list[str]:
+    keys: list[str] = []
+    for attachment in note.attachments:
+        keys.extend(_attachment_keys(note, attachment))
+    return keys
+
+
 def hydrate_inventory(
     *,
     inventory: Inventory,
     client: WizContentClient,
     progress: Callable[[str], None] | None = None,
     refresh_note_bodies: bool = False,
+    refresh_note_bodies_for_doc_guids: set[str] | None = None,
 ) -> HydrationResult:
-    notes: list[WizNote] = []
     resource_bytes_by_key = dict(inventory.resource_bytes_by_key)
     attachment_bytes_by_key = dict(inventory.attachment_bytes_by_key)
     summary = {
@@ -151,96 +298,70 @@ def hydrate_inventory(
         "hydrated_attachments": 0,
         "hydration_failures": 0,
     }
+    note_repair_status: dict[str, bool] = {}
 
-    body_retry_failures: set[str] = set()
-
-    def safe_fetch_note_body(note: WizNote) -> tuple[NoteBody, bool]:
-        for attempt in range(FETCH_RETRY_ATTEMPTS):
-            try:
-                return client.fetch_note_body(note), False
-            except Exception:
-                if attempt == FETCH_RETRY_ATTEMPTS - 1:
-                    return NoteBody(), True
-        return NoteBody(), False
-
-    def safe_fetch_resource(note: WizNote, resource_name: str) -> bytes | None:
-        for attempt in range(FETCH_RETRY_ATTEMPTS):
-            try:
-                payload = client.fetch_resource(note, resource_name)
-            except Exception:
-                if attempt == FETCH_RETRY_ATTEMPTS - 1:
-                    summary["hydration_failures"] += 1
-                    return None
-                continue
-            if _is_placeholder_resource_payload(payload):
-                if attempt == FETCH_RETRY_ATTEMPTS - 1:
-                    summary["hydration_failures"] += 1
-                    return None
-                continue
-            return payload
-        return None
-
-    def safe_fetch_attachment(note: WizNote, attachment: AttachmentRecord) -> bytes | None:
-        for attempt in range(FETCH_RETRY_ATTEMPTS):
-            try:
-                return client.fetch_attachment(note, attachment)
-            except Exception:
-                if attempt == FETCH_RETRY_ATTEMPTS - 1:
-                    summary["hydration_failures"] += 1
-                    return None
-        return None
-
+    # Phase 1: concurrent hydration per note
     total_notes = len(inventory.notes)
-    for index, note in enumerate(inventory.notes, start=1):
+    existing_resource_keys = set(resource_bytes_by_key.keys())
+    existing_attachment_keys = set(attachment_bytes_by_key.keys())
+
+    note_force_refresh = {}
+    for note in inventory.notes:
+        force_refresh_note_body = refresh_note_bodies or (
+            refresh_note_bodies_for_doc_guids is not None and note.doc_guid in refresh_note_bodies_for_doc_guids
+        )
+        note_force_refresh[note.doc_guid] = force_refresh_note_body
+
+    # Use ThreadPoolExecutor for concurrent hydration
+    results_by_index: dict[int, _SingleNoteHydrationResult] = {}
+    with ThreadPoolExecutor(max_workers=_CONCURRENT_MAX_WORKERS) as executor:
+        futures = {}
+        for index, note in enumerate(inventory.notes):
+            future = executor.submit(
+                _hydrate_single_note,
+                note=note,
+                client=client,
+                existing_resource_keys=existing_resource_keys,
+                existing_attachment_keys=existing_attachment_keys,
+                force_refresh_note_body=note_force_refresh[note.doc_guid],
+            )
+            futures[future] = index
+
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                results_by_index[index] = future.result()
+            except Exception:
+                # Isolate failure: create a minimal result preserving the original note
+                note = inventory.notes[index]
+                results_by_index[index] = _SingleNoteHydrationResult(
+                    note=note,
+                    new_resources={},
+                    new_attachments={},
+                    summary={"hydrated_notes": 0, "hydrated_resources": 0, "hydrated_attachments": 0, "hydration_failures": 1},
+                    needs_repair=True,
+                )
+
+    # Merge results in input order
+    notes: list[WizNote] = []
+    for index in range(total_notes):
+        result = results_by_index[index]
+        notes.append(result.note)
+        resource_bytes_by_key.update(result.new_resources)
+        attachment_bytes_by_key.update(result.new_attachments)
+        for key in ("hydrated_notes", "hydrated_resources", "hydrated_attachments", "hydration_failures"):
+            summary[key] += result.summary.get(key, 0)
+        note_repair_status[inventory.notes[index].doc_guid] = result.needs_repair
+
         if progress is not None:
-            progress(f"{index}/{total_notes} {note.title}")
+            progress(f"{index + 1}/{total_notes} {inventory.notes[index].title}")
 
-        body = note.body
-        resource_names = _iter_resource_names(body)
-        missing_resource_names = {
-            resource_name
-            for resource_name in resource_names
-            if make_resource_key(note.doc_guid, resource_name) not in resource_bytes_by_key
-        }
-
-        if refresh_note_bodies or not body.has_meaningful_content or missing_resource_names:
-            fetched_body, fetch_failed = safe_fetch_note_body(note)
-            if fetch_failed and note.doc_guid not in body_retry_failures:
-                body_retry_failures.add(note.doc_guid)
-                summary["hydration_failures"] += 1
-            if fetched_body.has_meaningful_content and fetched_body != body:
-                body = fetched_body
-                summary["hydrated_notes"] += 1
-            resource_names.update(_iter_resource_names(fetched_body))
-
-        for resource_name in sorted(resource_names):
-            resource_key = make_resource_key(note.doc_guid, resource_name)
-            if resource_key in resource_bytes_by_key:
-                continue
-            payload = safe_fetch_resource(note, resource_name)
-            if payload is None:
-                continue
-            resource_bytes_by_key[resource_key] = payload
-            summary["hydrated_resources"] += 1
-
-        for attachment in note.attachments:
-            candidate_keys = _attachment_keys(note, attachment)
-            if any(key in attachment_bytes_by_key for key in candidate_keys):
-                continue
-            payload = safe_fetch_attachment(note, attachment)
-            if payload is None:
-                continue
-            for key in candidate_keys:
-                attachment_bytes_by_key[key] = payload
-            summary["hydrated_attachments"] += 1
-
-        notes.append(replace(note, body=body) if body != note.body else note)
-
+    # Phase 2: sequential retry for notes still lacking meaningful content
     for index, note in enumerate(notes):
         if note.body.has_meaningful_content:
             continue
 
-        fetched_body, fetch_failed = safe_fetch_note_body(note)
+        fetched_body, fetch_failed = _safe_fetch_note_body(client, note, summary)
         if fetch_failed:
             continue
         if not fetched_body.has_meaningful_content:
@@ -248,28 +369,34 @@ def hydrate_inventory(
 
         body = fetched_body
         summary["hydrated_notes"] += 1
-        if note.doc_guid in body_retry_failures:
-            body_retry_failures.remove(note.doc_guid)
-            summary["hydration_failures"] = max(0, summary["hydration_failures"] - 1)
+        summary["hydration_failures"] = max(0, summary["hydration_failures"] - 1)
 
         for resource_name in sorted(_iter_resource_names(body)):
             resource_key = make_resource_key(note.doc_guid, resource_name)
             if resource_key in resource_bytes_by_key:
                 continue
-            payload = safe_fetch_resource(note, resource_name)
+            payload = _safe_fetch_resource(client, note, resource_name, summary)
             if payload is None:
                 continue
             resource_bytes_by_key[resource_key] = payload
             summary["hydrated_resources"] += 1
 
         notes[index] = replace(note, body=body)
+        note_repair_status[note.doc_guid] = not body.has_meaningful_content or any(
+            make_resource_key(note.doc_guid, name) not in resource_bytes_by_key
+            for name in _iter_resource_names(body)
+        )
 
     hydrated_inventory = Inventory(
         notes=tuple(notes),
         resource_bytes_by_key=resource_bytes_by_key,
         attachment_bytes_by_key=attachment_bytes_by_key,
     )
-    return HydrationResult(inventory=hydrated_inventory, summary=summary)
+    return HydrationResult(
+        inventory=hydrated_inventory,
+        summary=summary,
+        note_repair_status=note_repair_status,
+    )
 
 
 __all__ = [

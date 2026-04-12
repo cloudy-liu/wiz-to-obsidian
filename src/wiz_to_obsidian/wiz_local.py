@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import codecs
 from collections import Counter, defaultdict
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -201,6 +202,20 @@ def _pick_kb(account: Mapping[str, object], kbs: Sequence[Mapping[str, object]])
     return hydrated
 
 
+def _load_account_context(source: WizRecordSource) -> tuple[Mapping[str, object], Mapping[str, object], str, str]:
+    accounts = list(source.iter_store_values("wiz-account", "accounts"))
+    account = _pick_account(accounts)
+    user_guid = str(account.get("userGuid") or "")
+    if not user_guid:
+        raise RuntimeError("Wiz account record is missing userGuid")
+
+    user_db = f"wiz-{user_guid}"
+    kbs = list(source.iter_store_values(user_db, "kbs"))
+    kb = _pick_kb(account, kbs)
+    kb_guid = str(kb.get("kbGuid") or "")
+    return account, kb, user_db, kb_guid
+
+
 def _matches_kb(record: Mapping[str, object], kb_guid: str) -> bool:
     record_kb_guid = str(record.get("kbGuid") or "")
     return not record_kb_guid or record_kb_guid == kb_guid
@@ -273,6 +288,7 @@ def _collect_note_bodies_from_data(
     *,
     data_records: Sequence[Mapping[str, object]],
     kb_guid: str,
+    doc_guids: set[str] | None = None,
 ) -> tuple[dict[str, NoteBody], dict[str, bytes], dict[str, bytes]]:
     body_by_doc: dict[str, NoteBody] = {}
     resource_bytes_by_key: dict[str, bytes] = {}
@@ -282,6 +298,8 @@ def _collect_note_bodies_from_data(
         if not _matches_kb(record, kb_guid):
             continue
         doc_guid = str(record.get("docGuid") or "")
+        if doc_guids is not None and doc_guid not in doc_guids:
+            continue
         data_id = str(record.get("dataId") or "")
         data_type = str(record.get("dataType") or "")
         payload = record.get("data")
@@ -335,16 +353,33 @@ def scan_local_wiz(
             blob_dir=blob_dir or default_blob_dir(),
         )
 
-    accounts = list(source.iter_store_values("wiz-account", "accounts"))
-    account = _pick_account(accounts)
-    user_guid = str(account.get("userGuid") or "")
-    if not user_guid:
-        raise RuntimeError("Wiz account record is missing userGuid")
+    metadata_inventory = scan_local_wiz_metadata(
+        leveldb_dir=leveldb_dir,
+        blob_dir=blob_dir,
+        source=source,
+    )
+    return load_local_note_payloads(
+        metadata_inventory=metadata_inventory,
+        doc_guids={note.doc_guid for note in metadata_inventory.notes},
+        leveldb_dir=leveldb_dir,
+        blob_dir=blob_dir,
+        source=source,
+    )
 
-    user_db = f"wiz-{user_guid}"
-    kbs = list(source.iter_store_values(user_db, "kbs"))
-    kb = _pick_kb(account, kbs)
-    kb_guid = str(kb.get("kbGuid") or "")
+
+def scan_local_wiz_metadata(
+    *,
+    leveldb_dir: Path | None = None,
+    blob_dir: Path | None = None,
+    source: WizRecordSource | None = None,
+) -> Inventory:
+    if source is None:
+        source = IndexedDbWizSource(
+            leveldb_dir=leveldb_dir or default_leveldb_dir(),
+            blob_dir=blob_dir or default_blob_dir(),
+        )
+
+    account, kb, user_db, kb_guid = _load_account_context(source)
 
     folders = [folder for folder in source.iter_store_values(user_db, "folders") if _matches_kb(folder, kb_guid)]
     docs = [doc for doc in source.iter_store_values(user_db, "docs") if _matches_kb(doc, kb_guid)]
@@ -353,21 +388,6 @@ def scan_local_wiz(
         for attachment in source.iter_store_values(user_db, "attachments")
         if _matches_kb(attachment, kb_guid)
     ]
-    data_records = [record for record in source.iter_store_values(user_db, "data") if _matches_kb(record, kb_guid)]
-    editor_records = list(source.iter_store_values("wiz-editor-ot", "docs", skip_bad=True))
-
-    body_by_doc, resource_bytes_by_key, attachment_bytes_by_key = _collect_note_bodies_from_data(
-        data_records=data_records,
-        kb_guid=kb_guid,
-    )
-    live_doc_guids = {str(doc.get("docGuid") or "") for doc in docs}
-    body_by_doc.update(
-        _collect_editor_bodies(
-            editor_records=editor_records,
-            kb_guid=kb_guid,
-            live_doc_guids=live_doc_guids,
-        )
-    )
 
     kb_record = dict(kb)
     kb_record.setdefault("displayName", account.get("displayName"))
@@ -377,9 +397,70 @@ def scan_local_wiz(
         folders=folders,
         docs=docs,
         attachments=attachments,
-        body_by_doc=body_by_doc,
-        resource_bytes_by_key=resource_bytes_by_key,
-        attachment_bytes_by_key=attachment_bytes_by_key,
+        body_by_doc={},
+        resource_bytes_by_key={},
+        attachment_bytes_by_key={},
+    )
+
+
+def load_local_note_payloads(
+    *,
+    metadata_inventory: Inventory,
+    doc_guids: set[str] | None = None,
+    leveldb_dir: Path | None = None,
+    blob_dir: Path | None = None,
+    source: WizRecordSource | None = None,
+    account_context: tuple | None = None,
+) -> Inventory:
+    if source is None:
+        source = IndexedDbWizSource(
+            leveldb_dir=leveldb_dir or default_leveldb_dir(),
+            blob_dir=blob_dir or default_blob_dir(),
+        )
+
+    if not metadata_inventory.notes:
+        return metadata_inventory
+
+    if account_context is not None:
+        _, _, user_db, kb_guid = account_context
+    else:
+        _, _, user_db, kb_guid = _load_account_context(source)
+    target_doc_guids = set(doc_guids) if doc_guids is not None else {note.doc_guid for note in metadata_inventory.notes}
+    if not target_doc_guids:
+        return metadata_inventory
+
+    data_records = [
+        record
+        for record in source.iter_store_values(user_db, "data")
+        if _matches_kb(record, kb_guid) and str(record.get("docGuid") or "") in target_doc_guids
+    ]
+    editor_records = list(source.iter_store_values("wiz-editor-ot", "docs", skip_bad=True))
+
+    body_by_doc, resource_bytes_by_key, attachment_bytes_by_key = _collect_note_bodies_from_data(
+        data_records=data_records,
+        kb_guid=kb_guid,
+        doc_guids=target_doc_guids,
+    )
+    body_by_doc.update(
+        _collect_editor_bodies(
+            editor_records=editor_records,
+            kb_guid=kb_guid,
+            live_doc_guids=target_doc_guids,
+        )
+    )
+
+    notes = [
+        replace(note, body=body_by_doc[note.doc_guid]) if note.doc_guid in body_by_doc else note
+        for note in metadata_inventory.notes
+    ]
+    merged_resources = dict(metadata_inventory.resource_bytes_by_key)
+    merged_resources.update(resource_bytes_by_key)
+    merged_attachments = dict(metadata_inventory.attachment_bytes_by_key)
+    merged_attachments.update(attachment_bytes_by_key)
+    return Inventory(
+        notes=tuple(notes),
+        resource_bytes_by_key=merged_resources,
+        attachment_bytes_by_key=merged_attachments,
     )
 
 
@@ -401,6 +482,8 @@ __all__ = [
     "IndexedDbWizSource",
     "NoteBody",
     "build_inventory_from_records",
+    "load_local_note_payloads",
     "scan_local_wiz",
+    "scan_local_wiz_metadata",
     "summarize_inventory",
 ]

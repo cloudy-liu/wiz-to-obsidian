@@ -100,11 +100,39 @@ def render_frontmatter(note: NoteForExport) -> str:
     return "\n".join(lines)
 
 
+_WIZ_RESOURCE_PATTERN = re.compile(r"wiz-(?:resource|attachment)://[^\s)\]\"'>]+")
+_LEGACY_ASSET_PATTERN = re.compile(r"(?:index_files|[^\s/]+_files)/[^\s)\]\"'>]+")
+_PLAIN_RESOURCE_NAME_PATTERN = re.compile(
+    r'(?:(?:src|href)\s*=\s*["\']|!\[[^\]]*\]\(|\[[^\]]*\]\()'
+    r"(?P<value>[^)\"'\s]+)"
+)
+
+
 def _rewrite_resource_urls(text: str, resource_paths: Mapping[str, Path]) -> str:
-    rewritten = text
-    for original, target in resource_paths.items():
-        rewritten = rewritten.replace(original, _to_posix(target))
-    return rewritten
+    if not resource_paths:
+        return text
+
+    posix_paths = {original: _to_posix(target) for original, target in resource_paths.items()}
+
+    # Separate wiz-resource:// and wiz-attachment:// keys (handled by regex)
+    # from non-wiz keys like bare names and legacy paths (handled by targeted replace)
+    wiz_keys = {k: v for k, v in posix_paths.items() if k.startswith("wiz-")}
+    non_wiz_keys = {k: v for k, v in posix_paths.items() if not k.startswith("wiz-")}
+
+    # Pass 1: replace wiz-resource:// and wiz-attachment:// patterns via regex
+    if wiz_keys:
+
+        def _replace_wiz_match(match: re.Match[str]) -> str:
+            original = match.group(0)
+            return wiz_keys.get(original, original)
+
+        text = _WIZ_RESOURCE_PATTERN.sub(_replace_wiz_match, text)
+
+    # Pass 2: replace non-wiz keys (bare names, legacy paths) via targeted replace
+    for original, replacement in non_wiz_keys.items():
+        text = text.replace(original, replacement)
+
+    return text
 
 
 def _strip_tags(text: str) -> str:

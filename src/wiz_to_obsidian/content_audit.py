@@ -86,6 +86,7 @@ def write_content_audit(
     output_dir: Path,
     note_paths_by_doc_guid: Mapping[str, Path],
     missing_resources_by_doc_guid: Mapping[str, tuple[str, ...] | list[str] | set[str]],
+    note_markdowns_by_doc_guid: Mapping[str, str] | None = None,
 ) -> dict:
     auto_fixed: list[dict] = []
     unresolved: list[dict] = []
@@ -93,10 +94,13 @@ def write_content_audit(
 
     for note in inventory.notes:
         note_path = note_paths_by_doc_guid.get(note.doc_guid)
-        if note_path is None or not note_path.exists():
+        note_text = note_markdowns_by_doc_guid.get(note.doc_guid) if note_markdowns_by_doc_guid else None
+        if note_text is None:
+            if note_path is None or not note_path.exists():
+                continue
+            note_text = note_path.read_text(encoding="utf-8")
+        if note_path is None:
             continue
-
-        note_text = note_path.read_text(encoding="utf-8")
         body_text = _strip_frontmatter(note_text).strip()
         auto_issues: list[dict] = []
         unresolved_issues: list[dict] = []

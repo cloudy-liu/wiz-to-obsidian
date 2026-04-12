@@ -216,18 +216,39 @@ class ChromiumCacheBackend:
 class CachedWizClient:
     def __init__(self, backend: WizCacheBackend) -> None:
         self._entries = tuple(backend.iter_entries())
+        self._note_body_index: dict[tuple[str, str], CachedEntry] = {}
+        self._object_index: dict[tuple[str, str, str, str], CachedEntry] = {}
+        self._build_indexes()
         self.cached_auth = extract_cached_auth(self._entries) or CachedAuth()
 
-    def _find_entry(self, predicate) -> CachedEntry | None:
+    def _build_indexes(self) -> None:
         for entry in self._entries:
-            if predicate(entry):
-                return entry
-        return None
+            parsed = urlsplit(entry.key)
+            path = parsed.path
+
+            # Index note body entries: /ks/note/download/{kb_guid}/{doc_guid}
+            note_prefix = "/ks/note/download/"
+            if path.startswith(note_prefix):
+                parts = path[len(note_prefix):].strip("/").split("/")
+                if len(parts) == 2:
+                    kb_guid, doc_guid = parts
+                    self._note_body_index[(kb_guid, doc_guid)] = entry
+                    continue
+
+            # Index object entries: /ks/object/download/{kb_guid}/{doc_guid}?objType=...&objId=...
+            obj_prefix = "/ks/object/download/"
+            if path.startswith(obj_prefix):
+                parts = path[len(obj_prefix):].strip("/").split("/")
+                if len(parts) == 2:
+                    kb_guid, doc_guid = parts
+                    query = parse_qs(parsed.query)
+                    obj_type = query.get("objType", [""])[0]
+                    obj_id = query.get("objId", [""])[0]
+                    if obj_type and obj_id:
+                        self._object_index[(kb_guid, doc_guid, obj_type, obj_id)] = entry
 
     def fetch_note_body(self, note: WizNote) -> NoteBody:
-        entry = self._find_entry(
-            lambda item: urlsplit(item.key).path.endswith(f"/ks/note/download/{note.kb_guid}/{note.doc_guid}")
-        )
+        entry = self._note_body_index.get((note.kb_guid, note.doc_guid))
         if entry is None:
             return NoteBody()
         return _note_body_from_payload(entry.payload, doc_guid=note.doc_guid)
@@ -245,14 +266,7 @@ class CachedWizClient:
         return None
 
     def _fetch_object_bytes(self, note: WizNote, *, obj_type: str, obj_id: str) -> bytes | None:
-        def predicate(entry: CachedEntry) -> bool:
-            parsed = urlsplit(entry.key)
-            if not parsed.path.endswith(f"/ks/object/download/{note.kb_guid}/{note.doc_guid}"):
-                return False
-            query = parse_qs(parsed.query)
-            return query.get("objType", [""])[0] == obj_type and query.get("objId", [""])[0] == obj_id
-
-        entry = self._find_entry(predicate)
+        entry = self._object_index.get((note.kb_guid, note.doc_guid, obj_type, obj_id))
         if entry is None:
             return None
         return _extract_object_bytes(entry.payload)

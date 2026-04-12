@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 import re
 from typing import Mapping
 
@@ -127,6 +128,23 @@ class NoteForExport:
             body_html=body_html,
             attachments=note.attachments,
         )
+
+
+@dataclass(frozen=True)
+class SyncStateNote:
+    doc_guid: str
+    relative_path: Path
+    updated: str | None = None
+    needs_repair: bool = False
+    remote_version: int | None = None
+
+
+@dataclass(frozen=True)
+class SyncState:
+    notes_by_doc_guid: Mapping[str, SyncStateNote]
+    version: int = 1
+    generated_at: str | None = None
+    doc_version: int = 0
 
 
 @dataclass(frozen=True)

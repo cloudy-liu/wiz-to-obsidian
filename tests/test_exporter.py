@@ -486,6 +486,56 @@ class ExporterTests(unittest.TestCase):
             self.assertEqual(1, result.report["summary"]["missing_body_count"])
             self.assertEqual(["doc-1"], result.report["missing_bodies"])
 
+    def test_export_inventory_preserves_existing_markdown_when_note_body_missing(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        exporter = import_or_fail(self, "wiz_to_obsidian.exporter")
+
+        note = models.WizNote(
+            kb_name="Main KB",
+            kb_guid="kb-1",
+            doc_guid="doc-1",
+            title="Preserve Existing",
+            folder_parts=("Inbox",),
+            updated_at=datetime(2026, 4, 12, 8, 0, tzinfo=timezone.utc),
+            body=models.NoteBody(),
+        )
+        inventory = models.Inventory(notes=(note,))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            note_path = output_dir / "Inbox" / "Preserve Existing.md"
+            note_path.parent.mkdir(parents=True, exist_ok=True)
+            note_path.write_text(
+                "\n".join(
+                    [
+                        "---",
+                        'title: "Old Title"',
+                        "wiz_doc_guid: doc-1",
+                        "updated: 2026-04-01T00:00:00+00:00",
+                        "---",
+                        "",
+                        "# Existing Body",
+                        "",
+                        "Keep this content.",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = exporter.export_inventory(
+                inventory=inventory,
+                output_dir=output_dir,
+                write_content_audit_files=False,
+            )
+
+            note_text = note_path.read_text(encoding="utf-8")
+            self.assertIn("title: Preserve Existing", note_text)
+            self.assertIn("updated: 2026-04-12T08:00:00+00:00", note_text)
+            self.assertIn("# Existing Body", note_text)
+            self.assertIn("Keep this content.", note_text)
+            self.assertTrue(result.sync_state.notes_by_doc_guid["doc-1"].needs_repair)
+
 
 if __name__ == "__main__":
     unittest.main()

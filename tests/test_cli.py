@@ -222,6 +222,196 @@ class CliTests(unittest.TestCase):
             self.assertEqual(1, payload["summary"]["exported_notes"])
             self.assertEqual(1, payload["summary"]["new_notes"])
 
+    def test_incremental_export_only_loads_local_payloads_for_planned_notes(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+
+        metadata_inventory = models.Inventory(
+            notes=(
+                models.WizNote(
+                    kb_name="Main KB",
+                    kb_guid="kb-1",
+                    doc_guid="doc-same",
+                    title="Same",
+                    folder_parts=("Inbox",),
+                    updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+                ),
+                models.WizNote(
+                    kb_name="Main KB",
+                    kb_guid="kb-1",
+                    doc_guid="doc-new",
+                    title="New",
+                    folder_parts=("Inbox",),
+                    updated_at=datetime(2026, 4, 4, 11, 0, tzinfo=timezone.utc),
+                ),
+            )
+        )
+        captured = {}
+
+        class FakeSyncResult:
+            def __init__(self, output_dir: Path) -> None:
+                self.output_dir = output_dir
+                self.report_path = output_dir / "_wiz" / "report.json"
+                self.report = {
+                    "summary": {
+                        "total_notes": 2,
+                        "exported_notes": 1,
+                        "skipped_notes": 1,
+                        "new_notes": 1,
+                        "updated_notes": 0,
+                        "moved_notes": 0,
+                        "removed_old_paths": 0,
+                        "exported_resources": 0,
+                        "exported_attachments": 0,
+                    }
+                }
+
+        def fake_load_payloads(*, metadata_inventory, doc_guids, leveldb_dir=None, blob_dir=None, source=None):
+            captured["doc_guids"] = set(doc_guids)
+            return models.Inventory(
+                notes=tuple(note for note in metadata_inventory.notes if note.doc_guid in doc_guids),
+            )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_dir = Path(temp_dir) / "_wiz"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "notes": {
+                            "doc-same": {
+                                "relative_path": "Inbox/Same.md",
+                                "updated": "2026-04-04T10:00:00+00:00",
+                                "needs_repair": False,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            exit_code = cli.main(
+                ["export", "--output", temp_dir, "--incremental"],
+                stdout=io.StringIO(),
+                scan_inventory_metadata_fn=lambda leveldb_dir, blob_dir: metadata_inventory,
+                load_note_payloads_fn=fake_load_payloads,
+                incremental_sync_inventory_fn=lambda inventory, output_dir, limit=None, progress=None, plan=None, sync_state=None: FakeSyncResult(Path(temp_dir)),
+            )
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual({"doc-new"}, captured["doc_guids"])
+
+    def test_incremental_export_skips_payload_loading_and_hydration_when_plan_is_empty(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+
+        metadata_inventory = models.Inventory(
+            notes=(
+                models.WizNote(
+                    kb_name="Main KB",
+                    kb_guid="kb-1",
+                    doc_guid="doc-same",
+                    title="Same",
+                    folder_parts=("Inbox",),
+                    updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+                ),
+            )
+        )
+
+        class FakeSyncResult:
+            def __init__(self, output_dir: Path) -> None:
+                self.output_dir = output_dir
+                self.report_path = output_dir / "_wiz" / "report.json"
+                self.report = {
+                    "summary": {
+                        "total_notes": 1,
+                        "exported_notes": 0,
+                        "skipped_notes": 1,
+                        "new_notes": 0,
+                        "updated_notes": 0,
+                        "moved_notes": 0,
+                        "removed_old_paths": 0,
+                        "exported_resources": 0,
+                        "exported_attachments": 0,
+                    }
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_dir = Path(temp_dir) / "_wiz"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "notes": {
+                            "doc-same": {
+                                "relative_path": "Inbox/Same.md",
+                                "updated": "2026-04-04T10:00:00+00:00",
+                                "needs_repair": False,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            exit_code = cli.main(
+                ["export", "--output", temp_dir, "--incremental", "--hydrate-missing"],
+                stdout=io.StringIO(),
+                scan_inventory_metadata_fn=lambda leveldb_dir, blob_dir: metadata_inventory,
+                load_note_payloads_fn=lambda **kwargs: (_ for _ in ()).throw(AssertionError("payload load not expected")),
+                build_hydration_client_fn=lambda args: mock.MagicMock(),
+                incremental_sync_inventory_fn=lambda inventory, output_dir, limit=None, progress=None, plan=None, sync_state=None, hydration_repair_status=None, doc_version=0: FakeSyncResult(Path(temp_dir)),
+            )
+
+        self.assertEqual(0, exit_code)
+
+    def test_incremental_export_writes_state_file(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+
+        metadata_inventory = models.Inventory(
+            notes=(
+                models.WizNote(
+                    kb_name="Main KB",
+                    kb_guid="kb-1",
+                    doc_guid="doc-1",
+                    title="Roadmap",
+                    folder_parts=("Inbox",),
+                    updated_at=datetime(2026, 4, 4, 11, 0, tzinfo=timezone.utc),
+                ),
+            )
+        )
+        payload_inventory = models.Inventory(
+            notes=(
+                models.WizNote(
+                    kb_name="Main KB",
+                    kb_guid="kb-1",
+                    doc_guid="doc-1",
+                    title="Roadmap",
+                    folder_parts=("Inbox",),
+                    updated_at=datetime(2026, 4, 4, 11, 0, tzinfo=timezone.utc),
+                    body=models.NoteBody(markdown="# Ready"),
+                ),
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            exit_code = cli.main(
+                ["export", "--output", temp_dir, "--incremental"],
+                stdout=io.StringIO(),
+                scan_inventory_metadata_fn=lambda leveldb_dir, blob_dir: metadata_inventory,
+                load_note_payloads_fn=lambda **kwargs: payload_inventory,
+            )
+
+            self.assertEqual(0, exit_code)
+            state_path = Path(temp_dir) / "_wiz" / "state.json"
+            self.assertTrue(state_path.exists())
+            state_payload = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual("Inbox/Roadmap.md", state_payload["notes"]["doc-1"]["relative_path"])
+            self.assertEqual("2026-04-04T11:00:00+00:00", state_payload["notes"]["doc-1"]["updated"])
+
     def test_export_command_writes_progress_updates_to_stderr(self) -> None:
         cli = import_or_fail(self, "wiz_to_obsidian.cli")
         models = import_or_fail(self, "wiz_to_obsidian.models")
@@ -321,13 +511,14 @@ class CliTests(unittest.TestCase):
                         "exported_attachments": 0,
                     }
                 }
+                self.sync_state = None
 
         def fake_export(*, inventory, output_dir, limit=None, progress=None):
             if progress is not None:
                 progress("1/1 Roadmap.md")
             return FakeExportResult(output_dir)
 
-        time_values = iter([100.0, 101.0, 102.0, 103.5, 106.0, 107.0])
+        time_values = iter([100.0, 101.0, 102.0, 103.5, 106.0, 107.0, 108.0])
         with tempfile.TemporaryDirectory() as temp_dir:
             stdout = io.StringIO()
             stderr = io.StringIO()
@@ -344,7 +535,7 @@ class CliTests(unittest.TestCase):
             logs = stderr.getvalue()
             self.assertIn("[scan] done in 1.00s", logs)
             self.assertIn("[export] done in 2.50s", logs)
-            self.assertIn("[done] total elapsed: 7.00s", logs)
+            self.assertIn("[done] total elapsed: 8.00s", logs)
 
     def test_incremental_export_refreshes_updated_note_body_when_hydrating(self) -> None:
         cli = import_or_fail(self, "wiz_to_obsidian.cli")
@@ -398,7 +589,8 @@ class CliTests(unittest.TestCase):
                 ["export", "--output", temp_dir, "--incremental", "--hydrate-missing"],
                 stdout=stdout,
                 stderr=stderr,
-                scan_inventory_fn=lambda leveldb_dir, blob_dir: inventory,
+                scan_inventory_metadata_fn=lambda leveldb_dir, blob_dir: inventory,
+                load_note_payloads_fn=lambda **kwargs: kwargs.get("metadata_inventory", inventory),
                 build_hydration_client_fn=lambda args: FakeClient(),
             )
 

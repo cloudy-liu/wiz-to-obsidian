@@ -12,11 +12,53 @@ from typing import TextIO
 from .config import default_blob_dir, default_cache_dir, default_export_dir, default_leveldb_dir
 from .exporter import export_inventory
 from .models import Inventory
-from .sync import incremental_sync_inventory, plan_incremental_sync
+from .sync import incremental_sync_inventory, load_or_rebuild_sync_state, plan_incremental_sync, write_sync_state
 from .wiz_cache import CachedWizClient, ChromiumCacheBackend
 from .wiz_hydration import CompositeWizContentClient, HydrationResult, hydrate_inventory
-from .wiz_local import scan_local_wiz, summarize_inventory
+from .wiz_local import load_local_note_payloads, scan_local_wiz, scan_local_wiz_metadata, summarize_inventory
 from .wiz_remote import RemoteWizConfig, RemoteWizClient
+
+
+def _extract_remote_client(client: object) -> RemoteWizClient | None:
+    if isinstance(client, RemoteWizClient):
+        return client
+    from .wiz_hydration import CompositeWizContentClient
+
+    if isinstance(client, CompositeWizContentClient):
+        for c in client._clients:
+            if isinstance(c, RemoteWizClient):
+                return c
+    return None
+
+
+def _count_remote_updates(
+    remote_versions: dict[str, dict],
+    skipped_doc_guids: tuple[str, ...],
+    sync_state,
+) -> int:
+    from datetime import datetime, timezone
+
+    count = 0
+    for doc_guid in skipped_doc_guids:
+        remote_info = remote_versions.get(doc_guid)
+        if not remote_info:
+            continue
+        data_modified = remote_info.get("dataModified")
+        if not isinstance(data_modified, (int, float)):
+            continue
+        state_entry = sync_state.notes_by_doc_guid.get(doc_guid)
+        if not state_entry or not state_entry.updated:
+            continue
+        try:
+            remote_dt = datetime.fromtimestamp(data_modified / 1000, tz=timezone.utc)
+            state_dt = datetime.fromisoformat(state_entry.updated)
+            if state_dt.tzinfo is None:
+                state_dt = state_dt.replace(tzinfo=timezone.utc)
+        except (ValueError, OverflowError):
+            continue
+        if remote_dt > state_dt:
+            count += 1
+    return count
 
 
 DOTENV_KEY_ALIASES = {
@@ -147,6 +189,14 @@ def _combine_hydration_summaries(*summaries: dict[str, int]) -> dict[str, int]:
     return combined
 
 
+def _select_inventory_doc_guids(inventory: Inventory, doc_guids: set[str]) -> Inventory:
+    return Inventory(
+        notes=tuple(note for note in inventory.notes if note.doc_guid in doc_guids),
+        resource_bytes_by_key=inventory.resource_bytes_by_key,
+        attachment_bytes_by_key=inventory.attachment_bytes_by_key,
+    )
+
+
 def _build_hydration_client(args) -> CompositeWizContentClient | CachedWizClient | RemoteWizClient:
     clients = []
     cache_auth = None
@@ -194,6 +244,8 @@ def main(
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     scan_inventory_fn=scan_local_wiz,
+    scan_inventory_metadata_fn=scan_local_wiz_metadata,
+    load_note_payloads_fn=load_local_note_payloads,
     hydrate_inventory_fn=hydrate_inventory,
     build_hydration_client_fn=_build_hydration_client,
     export_inventory_fn=export_inventory,
@@ -207,106 +259,247 @@ def main(
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
 
-    scan_started_at = time_fn()
-    _write_progress(stderr, "scan", "reading local Wiz data")
-    inventory = scan_inventory_fn(leveldb_dir=args.leveldb_dir, blob_dir=args.blob_dir)
-    _write_progress(
-        stderr,
-        "scan",
-        (
-            f"found {len(inventory.notes)} notes, "
-            f"{sum(len(note.attachments) for note in inventory.notes)} attachments, "
-            f"{inventory.resource_count} cached resources"
-        ),
-    )
-    _write_progress(stderr, "scan", f"done in {_format_duration(time_fn() - scan_started_at)}")
     if args.command == "scan":
+        scan_started_at = time_fn()
+        _write_progress(stderr, "scan", "reading local Wiz data")
+        inventory = scan_inventory_fn(leveldb_dir=args.leveldb_dir, blob_dir=args.blob_dir)
+        _write_progress(
+            stderr,
+            "scan",
+            (
+                f"found {len(inventory.notes)} notes, "
+                f"{sum(len(note.attachments) for note in inventory.notes)} attachments, "
+                f"{inventory.resource_count} cached resources"
+            ),
+        )
+        _write_progress(stderr, "scan", f"done in {_format_duration(time_fn() - scan_started_at)}")
         _write_progress(stderr, "done", f"total elapsed: {_format_duration(time_fn() - total_started_at)}")
         _write_json(stdout, summarize_inventory(inventory))
         return 0
 
+    stage_timings: dict[str, str] = {}
+    planning_summary: dict[str, object] | None = None
     hydration_result: HydrationResult | None = None
-    if args.hydrate_missing:
-        hydrate_started_at = time_fn()
-        _write_progress(stderr, "hydrate", "filling missing bodies/resources/attachments")
-        hydration_client = build_hydration_client_fn(args)
-        try:
-            hydration_result = _call_with_supported_kwargs(
-                hydrate_inventory_fn,
-                inventory=inventory,
-                client=hydration_client,
-                progress=lambda message: _write_progress(stderr, "hydrate", message),
-            )
-            inventory = hydration_result.inventory
-            _write_progress(
-                stderr,
-                "hydrate",
-                (
-                    "done: "
-                    f"notes+{hydration_result.summary.get('hydrated_notes', 0)}, "
-                    f"resources+{hydration_result.summary.get('hydrated_resources', 0)}, "
-                    f"attachments+{hydration_result.summary.get('hydrated_attachments', 0)}, "
-                    f"failures={hydration_result.summary.get('hydration_failures', 0)}"
-                ),
-            )
-
-            if args.incremental:
-                preplan = plan_incremental_sync(inventory, args.output)
-                if preplan.notes_to_export:
-                    _write_progress(
-                        stderr,
-                        "hydrate",
-                        f"refreshing {len(preplan.notes_to_export)} changed notes before export",
-                    )
-                    refresh_inventory = Inventory(
-                        notes=preplan.notes_to_export,
-                        resource_bytes_by_key=inventory.resource_bytes_by_key,
-                        attachment_bytes_by_key=inventory.attachment_bytes_by_key,
-                    )
-                    refresh_result = _call_with_supported_kwargs(
-                        hydrate_inventory_fn,
-                        inventory=refresh_inventory,
-                        client=hydration_client,
-                        progress=lambda message: _write_progress(stderr, "hydrate", message),
-                        refresh_note_bodies=True,
-                    )
-                    inventory = _merge_inventory(inventory, refresh_result.inventory)
-                    hydration_result = HydrationResult(
-                        inventory=inventory,
-                        summary=_combine_hydration_summaries(
-                            hydration_result.summary,
-                            refresh_result.summary,
-                        ),
-                    )
-                    _write_progress(
-                        stderr,
-                        "hydrate",
-                        (
-                            "refresh done: "
-                            f"notes+{refresh_result.summary.get('hydrated_notes', 0)}, "
-                            f"resources+{refresh_result.summary.get('hydrated_resources', 0)}, "
-                            f"attachments+{refresh_result.summary.get('hydrated_attachments', 0)}, "
-                            f"failures={refresh_result.summary.get('hydration_failures', 0)}"
-                        ),
-                    )
-        finally:
-            close = getattr(hydration_client, "close", None)
-            if callable(close):
-                close()
-        _write_progress(stderr, "hydrate", f"done in {_format_duration(time_fn() - hydrate_started_at)}")
-
     if args.incremental:
+        scan_started_at = time_fn()
+        _write_progress(stderr, "scan", "reading local Wiz metadata")
+        metadata_inventory = scan_inventory_metadata_fn(leveldb_dir=args.leveldb_dir, blob_dir=args.blob_dir)
+        metadata_duration = _format_duration(time_fn() - scan_started_at)
+        _write_progress(
+            stderr,
+            "scan",
+            (
+                f"found {len(metadata_inventory.notes)} notes, "
+                f"{sum(len(note.attachments) for note in metadata_inventory.notes)} attachments"
+            ),
+        )
+        _write_progress(stderr, "scan", f"done in {metadata_duration}")
+        stage_timings["metadata_scan"] = metadata_duration
+
+        state_started_at = time_fn()
+        sync_state_load_result = load_or_rebuild_sync_state(args.output)
+        state_duration = _format_duration(time_fn() - state_started_at)
+        stage_timings["state_load_or_rebuild"] = state_duration
+
+        planning_started_at = time_fn()
+        remote_versions = None
+        remote_max_version = 0
+        if args.hydrate_missing and sync_state_load_result.state.notes_by_doc_guid:
+            hydration_client = build_hydration_client_fn(args)
+            try:
+                remote_client = _extract_remote_client(hydration_client)
+                if remote_client is not None:
+                    remote_check_started_at = time_fn()
+                    kb_guids = {note.kb_guid for note in metadata_inventory.notes if note.kb_guid}
+                    for kb_guid in kb_guids:
+                        try:
+                            kb_info = remote_client.fetch_kb_info(kb_guid)
+                            remote_kb_doc_version = kb_info.get("doc_version", 0)
+                            if remote_kb_doc_version > sync_state_load_result.state.doc_version:
+                                _write_progress(
+                                    stderr,
+                                    "remote_check",
+                                    f"kb {kb_guid}: remote doc_version={remote_kb_doc_version}, local={sync_state_load_result.state.doc_version}, fetching changes",
+                                )
+                                versions = remote_client.fetch_remote_note_versions(
+                                    kb_guid, since_version=sync_state_load_result.state.doc_version
+                                )
+                                if remote_versions is None:
+                                    remote_versions = {}
+                                remote_versions.update(versions)
+                                if versions:
+                                    remote_max_version = max(
+                                        remote_max_version,
+                                        max(v.get("version", 0) for v in versions.values()),
+                                    )
+                            else:
+                                _write_progress(
+                                    stderr,
+                                    "remote_check",
+                                    f"kb {kb_guid}: remote doc_version={remote_kb_doc_version} <= local={sync_state_load_result.state.doc_version}, no remote changes",
+                                )
+                        except Exception as exc:
+                            _write_progress(stderr, "remote_check", f"kb {kb_guid}: check failed: {exc}")
+                    remote_check_duration = _format_duration(time_fn() - remote_check_started_at)
+                    stage_timings["remote_version_check"] = remote_check_duration
+                    if remote_versions:
+                        remote_update_count = _count_remote_updates(
+                            remote_versions, (), sync_state_load_result.state
+                        )
+                        _write_progress(
+                            stderr,
+                            "remote_check",
+                            f"done in {remote_check_duration}: {len(remote_versions)} changed notes, {remote_update_count} newer than local",
+                        )
+                    else:
+                        _write_progress(stderr, "remote_check", f"done in {remote_check_duration}: no remote changes")
+            finally:
+                close = getattr(hydration_client, "close", None)
+                if callable(close):
+                    close()
+
+        preplan = plan_incremental_sync(
+            metadata_inventory, args.output,
+            sync_state=sync_state_load_result.state,
+            remote_versions=remote_versions,
+        )
+        planning_duration = _format_duration(time_fn() - planning_started_at)
+        planning_summary = {
+            "state_source": sync_state_load_result.source,
+            "planned_notes": len(preplan.notes_to_export),
+            "skipped_notes": len(preplan.skipped_doc_guids),
+            "stale_paths_to_remove": len(preplan.stale_paths_to_remove),
+        }
+        _write_progress(
+            stderr,
+            "sync",
+            (
+                f"planned {len(preplan.notes_to_export)} notes, "
+                f"skipped {len(preplan.skipped_doc_guids)}, "
+                f"stale_paths {len(preplan.stale_paths_to_remove)}"
+            ),
+        )
+        stage_timings["planning"] = planning_duration
+
+        changed_doc_guids = {note.doc_guid for note in preplan.notes_to_export}
+        inventory = Inventory(notes=())
+        if changed_doc_guids:
+            payload_started_at = time_fn()
+            _write_progress(stderr, "scan", f"loading local payloads for {len(changed_doc_guids)} planned notes")
+            payload_inventory = _call_with_supported_kwargs(
+                load_note_payloads_fn,
+                metadata_inventory=metadata_inventory,
+                doc_guids=changed_doc_guids,
+                leveldb_dir=args.leveldb_dir,
+                blob_dir=args.blob_dir,
+            )
+            inventory = _select_inventory_doc_guids(payload_inventory, changed_doc_guids)
+            payload_duration = _format_duration(time_fn() - payload_started_at)
+            _write_progress(stderr, "scan", f"payload load done in {payload_duration}")
+            stage_timings["payload_load"] = payload_duration
+
+        hydration_repair_status = None
+        if args.hydrate_missing and changed_doc_guids:
+            hydrate_started_at = time_fn()
+            _write_progress(stderr, "hydrate", "filling missing bodies/resources/attachments")
+            hydration_client = build_hydration_client_fn(args)
+            try:
+                refresh_doc_guids = {
+                    doc_guid for doc_guid, reason in preplan.reasons_by_doc_guid.items()
+                    if reason in ("updated", "remote_updated")
+                }
+                hydration_result = _call_with_supported_kwargs(
+                    hydrate_inventory_fn,
+                    inventory=inventory,
+                    client=hydration_client,
+                    progress=lambda message: _write_progress(stderr, "hydrate", message),
+                    refresh_note_bodies_for_doc_guids=refresh_doc_guids,
+                )
+                inventory = hydration_result.inventory
+                hydration_repair_status = getattr(hydration_result, "note_repair_status", None)
+                _write_progress(
+                    stderr,
+                    "hydrate",
+                    (
+                        "done: "
+                        f"notes+{hydration_result.summary.get('hydrated_notes', 0)}, "
+                        f"resources+{hydration_result.summary.get('hydrated_resources', 0)}, "
+                        f"attachments+{hydration_result.summary.get('hydrated_attachments', 0)}, "
+                        f"failures={hydration_result.summary.get('hydration_failures', 0)}"
+                    ),
+                )
+            finally:
+                close = getattr(hydration_client, "close", None)
+                if callable(close):
+                    close()
+            hydrate_duration = _format_duration(time_fn() - hydrate_started_at)
+            _write_progress(stderr, "hydrate", f"done in {hydrate_duration}")
+            stage_timings["hydrate"] = hydrate_duration
+
         sync_started_at = time_fn()
-        _write_progress(stderr, "sync", "planning incremental sync")
+        _write_progress(stderr, "sync", "running incremental sync")
         result = _call_with_supported_kwargs(
             incremental_sync_inventory_fn,
             inventory=inventory,
             output_dir=args.output,
             limit=args.limit,
             progress=lambda message: _write_progress(stderr, "sync", message),
+            plan=preplan,
+            sync_state=sync_state_load_result.state,
+            hydration_repair_status=hydration_repair_status,
+            doc_version=remote_max_version,
         )
-        _write_progress(stderr, "sync", f"done in {_format_duration(time_fn() - sync_started_at)}")
+        sync_duration = _format_duration(time_fn() - sync_started_at)
+        _write_progress(stderr, "sync", f"done in {sync_duration}")
+        stage_timings["sync"] = sync_duration
     else:
+        scan_started_at = time_fn()
+        _write_progress(stderr, "scan", "reading local Wiz data")
+        inventory = scan_inventory_fn(leveldb_dir=args.leveldb_dir, blob_dir=args.blob_dir)
+        scan_duration = _format_duration(time_fn() - scan_started_at)
+        _write_progress(
+            stderr,
+            "scan",
+            (
+                f"found {len(inventory.notes)} notes, "
+                f"{sum(len(note.attachments) for note in inventory.notes)} attachments, "
+                f"{inventory.resource_count} cached resources"
+            ),
+        )
+        _write_progress(stderr, "scan", f"done in {scan_duration}")
+        stage_timings["scan"] = scan_duration
+
+        if args.hydrate_missing:
+            hydrate_started_at = time_fn()
+            _write_progress(stderr, "hydrate", "filling missing bodies/resources/attachments")
+            hydration_client = build_hydration_client_fn(args)
+            try:
+                hydration_result = _call_with_supported_kwargs(
+                    hydrate_inventory_fn,
+                    inventory=inventory,
+                    client=hydration_client,
+                    progress=lambda message: _write_progress(stderr, "hydrate", message),
+                )
+                inventory = hydration_result.inventory
+                _write_progress(
+                    stderr,
+                    "hydrate",
+                    (
+                        "done: "
+                        f"notes+{hydration_result.summary.get('hydrated_notes', 0)}, "
+                        f"resources+{hydration_result.summary.get('hydrated_resources', 0)}, "
+                        f"attachments+{hydration_result.summary.get('hydrated_attachments', 0)}, "
+                        f"failures={hydration_result.summary.get('hydration_failures', 0)}"
+                    ),
+                )
+            finally:
+                close = getattr(hydration_client, "close", None)
+                if callable(close):
+                    close()
+            hydrate_duration = _format_duration(time_fn() - hydrate_started_at)
+            _write_progress(stderr, "hydrate", f"done in {hydrate_duration}")
+            stage_timings["hydrate"] = hydrate_duration
+
         export_started_at = time_fn()
         _write_progress(stderr, "export", "writing Markdown/resources/attachments")
         result = _call_with_supported_kwargs(
@@ -316,12 +509,24 @@ def main(
             limit=args.limit,
             progress=lambda message: _write_progress(stderr, "export", message),
         )
-        _write_progress(stderr, "export", f"done in {_format_duration(time_fn() - export_started_at)}")
+        export_duration = _format_duration(time_fn() - export_started_at)
+        _write_progress(stderr, "export", f"done in {export_duration}")
+        stage_timings["export"] = export_duration
+        result_sync_state = getattr(result, "sync_state", None)
+        if result_sync_state is not None:
+            write_sync_state(args.output, result_sync_state)
     payload = dict(result.report)
     payload["output_dir"] = str(result.output_dir)
     payload["report_path"] = str(result.report_path)
     if hydration_result is not None:
         payload["hydration"] = dict(hydration_result.summary)
+    if planning_summary is not None:
+        payload["planning"] = planning_summary
+    if stage_timings:
+        stage_timings["total"] = _format_duration(time_fn() - total_started_at)
+        payload["timings"] = stage_timings
+    result.report_path.parent.mkdir(parents=True, exist_ok=True)
+    result.report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     _write_progress(stderr, "done", f"report: {result.report_path}")
     _write_progress(stderr, "done", f"total elapsed: {_format_duration(time_fn() - total_started_at)}")
     _write_json(stdout, payload)

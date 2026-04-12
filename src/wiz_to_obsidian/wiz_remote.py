@@ -4,6 +4,7 @@ import base64
 from collections.abc import Mapping
 from dataclasses import dataclass
 import json
+import threading
 from typing import Any
 import uuid
 from urllib.error import HTTPError
@@ -83,6 +84,7 @@ class RemoteWizClient:
         self._token = config.token
         self._editor_tokens_by_doc_guid: dict[str, str] = {}
         self._editor_resource_tokens_by_doc_guid: dict[str, str] = {}
+        self._token_lock = threading.Lock()
 
     def close(self) -> None:
         return None
@@ -270,10 +272,11 @@ class RemoteWizClient:
         return websocket.create_connection(url, timeout=self._config.timeout_seconds)
 
     def _fetch_editor_token(self, note: WizNote, *, force_refresh: bool = False) -> str | None:
-        if not force_refresh:
-            cached_token = self._editor_tokens_by_doc_guid.get(note.doc_guid)
-            if cached_token:
-                return cached_token
+        with self._token_lock:
+            if not force_refresh:
+                cached_token = self._editor_tokens_by_doc_guid.get(note.doc_guid)
+                if cached_token:
+                    return cached_token
 
         payload = self._request_json(
             f"{self._ks_server_url}/ks/note/{note.kb_guid}/{note.doc_guid}/tokens",
@@ -285,14 +288,16 @@ class RemoteWizClient:
 
         editor_token = _first_string_field(payload, "editorToken")
         if editor_token:
-            self._editor_tokens_by_doc_guid[note.doc_guid] = editor_token
+            with self._token_lock:
+                self._editor_tokens_by_doc_guid[note.doc_guid] = editor_token
         return editor_token
 
     def _fetch_editor_resource_token(self, note: WizNote, *, force_refresh: bool = False) -> str | None:
-        if not force_refresh:
-            cached_token = self._editor_resource_tokens_by_doc_guid.get(note.doc_guid)
-            if cached_token:
-                return cached_token
+        with self._token_lock:
+            if not force_refresh:
+                cached_token = self._editor_resource_tokens_by_doc_guid.get(note.doc_guid)
+                if cached_token:
+                    return cached_token
 
         editor_token = self._fetch_editor_token(note, force_refresh=force_refresh)
         if not editor_token:
@@ -312,7 +317,8 @@ class RemoteWizClient:
 
         resource_token = _first_string_field(payload, "read")
         if resource_token:
-            self._editor_resource_tokens_by_doc_guid[note.doc_guid] = resource_token
+            with self._token_lock:
+                self._editor_resource_tokens_by_doc_guid[note.doc_guid] = resource_token
         return resource_token
 
     def _fetch_editor_resource(self, note: WizNote, resource_name: str) -> bytes | None:
@@ -326,8 +332,9 @@ class RemoteWizClient:
                     f"{self._editor_base_url(note)}/resources/{encoded_name}?token={resource_token}",
                 )
             except (HTTPError, RuntimeError):
-                self._editor_tokens_by_doc_guid.pop(note.doc_guid, None)
-                self._editor_resource_tokens_by_doc_guid.pop(note.doc_guid, None)
+                with self._token_lock:
+                    self._editor_tokens_by_doc_guid.pop(note.doc_guid, None)
+                    self._editor_resource_tokens_by_doc_guid.pop(note.doc_guid, None)
         return None
 
     def _fetch_editor_snapshot(self, note: WizNote) -> Mapping[str, Any] | str | bytes | None:
@@ -384,6 +391,54 @@ class RemoteWizClient:
                 except Exception:
                     pass
         return None
+
+    def fetch_kb_info(self, kb_guid: str) -> dict[str, int]:
+        payload = self._request_json(
+            f"{self._ks_server_url}/ks/kb/info/{kb_guid}",
+            require_auth=True,
+        )
+        result = payload.get("result")
+        if not isinstance(result, Mapping):
+            return {"doc_version": 0, "att_version": 0, "note_count": 0}
+        return {
+            "doc_version": int(result.get("docVersion") or 0),
+            "att_version": int(result.get("attVersion") or 0),
+            "note_count": int(result.get("noteCount") or 0),
+        }
+
+    def fetch_remote_note_versions(
+        self,
+        kb_guid: str,
+        *,
+        since_version: int = 0,
+    ) -> dict[str, dict]:
+        all_notes: list[Mapping[str, object]] = []
+        version = since_version
+        while True:
+            payload = self._request_json(
+                f"{self._ks_server_url}/ks/note/list/version/{kb_guid}?version={version}&count=200",
+                require_auth=True,
+            )
+            result = payload.get("result")
+            if not isinstance(result, list) or not result:
+                break
+            all_notes.extend(result)
+            if len(result) < 200:
+                break
+            version = max(int(n.get("version") or 0) for n in result) + 1
+
+        versions: dict[str, dict] = {}
+        for note in all_notes:
+            doc_guid = str(note.get("docGuid") or "")
+            if not doc_guid:
+                continue
+            versions[doc_guid] = {
+                "dataModified": note.get("dataModified"),
+                "version": int(note.get("version") or 0),
+                "title": str(note.get("title") or ""),
+                "type": str(note.get("type") or ""),
+            }
+        return versions
 
 
 __all__ = ["RemoteWizClient", "RemoteWizConfig"]

@@ -8,8 +8,15 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from .content_audit import write_content_audit
-from .markdown_export import _clean_html_document, NotePathResolver, NoteForExport, make_attachment_key, render_note_markdown
-from .models import Inventory, WizNote
+from .markdown_export import (
+    _clean_html_document,
+    NotePathResolver,
+    NoteForExport,
+    make_attachment_key,
+    render_frontmatter,
+    render_note_markdown,
+)
+from .models import Inventory, SyncState, SyncStateNote, WizNote
 from .reporting import build_export_report
 
 
@@ -22,6 +29,8 @@ HTML_LINK_TAG = re.compile(
     r"""<a\b[^>]*href\s*=\s*["'](?P<target>[^"']+)["'][^>]*>.*?</a>""",
     re.IGNORECASE | re.DOTALL,
 )
+FRONTMATTER_BLOCK = re.compile(r"\A---\s*\r?\n(?P<body>.*?)(?:\r?\n)---(?:\r?\n|\Z)", re.DOTALL)
+FRONTMATTER_FIELD = re.compile(r"^(?P<key>[A-Za-z0-9_]+):\s*(?P<value>.*)$")
 
 
 @dataclass(frozen=True)
@@ -29,6 +38,7 @@ class ExportResult:
     output_dir: Path
     report_path: Path
     report: dict
+    sync_state: SyncState | None = None
 
 
 def _sanitize_asset_name(name: str) -> str:
@@ -202,6 +212,8 @@ def _resource_payloads_for_note(note: WizNote, inventory: Inventory) -> dict[str
 
 def _write_binary(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.read_bytes() == payload:
+        return
     path.write_bytes(payload)
 
 
@@ -209,6 +221,125 @@ def _append_attachment_section(markdown: str, attachment_lines: list[str]) -> st
     if not attachment_lines:
         return markdown
     return f"{markdown.rstrip()}\n\n## Attachments\n" + "\n".join(attachment_lines) + "\n"
+
+
+def _parse_frontmatter_fields(text: str) -> dict[str, str]:
+    match = FRONTMATTER_BLOCK.match(text)
+    if not match:
+        return {}
+
+    fields: dict[str, str] = {}
+    for line in match.group("body").splitlines():
+        field_match = FRONTMATTER_FIELD.match(line.strip())
+        if field_match:
+            value = field_match.group("value").strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                value = value[1:-1]
+            fields[field_match.group("key")] = value
+    return fields
+
+
+def _strip_frontmatter(text: str) -> str:
+    match = FRONTMATTER_BLOCK.match(text)
+    if not match:
+        return text.strip()
+    return text[match.end() :].strip()
+
+
+def _looks_like_relative_link(target: str) -> bool:
+    normalized = target.strip()
+    if not normalized or normalized.startswith(("#", "/", "mailto:", "data:")):
+        return False
+    return "://" not in normalized
+
+
+def _rebase_relative_link_target(
+    target: str,
+    *,
+    source_path: Path,
+    target_path: Path,
+    output_dir: Path,
+) -> str:
+    normalized = target.strip()
+    if not _looks_like_relative_link(normalized):
+        return target
+
+    source_root = output_dir.resolve(strict=False)
+    resolved_target = (source_path.parent / Path(normalized)).resolve(strict=False)
+    try:
+        resolved_target.relative_to(source_root)
+    except ValueError:
+        return target
+
+    rebased = Path(os.path.relpath(resolved_target, target_path.parent))
+    return _to_posix(rebased)
+
+
+def _rebase_preserved_body_links(
+    body: str,
+    *,
+    source_path: Path,
+    target_path: Path,
+    output_dir: Path,
+) -> str:
+    if source_path == target_path:
+        return body
+
+    def replace_markdown_target(match: re.Match[str]) -> str:
+        raw_target = match.group("target") or match.group("link_target") or ""
+        rebased_target = _rebase_relative_link_target(
+            raw_target,
+            source_path=source_path,
+            target_path=target_path,
+            output_dir=output_dir,
+        )
+        if not raw_target or rebased_target == raw_target:
+            return match.group(0)
+        return match.group(0).replace(raw_target, rebased_target, 1)
+
+    def replace_html_target(match: re.Match[str]) -> str:
+        raw_target = match.group("value").strip()
+        rebased_target = _rebase_relative_link_target(
+            raw_target,
+            source_path=source_path,
+            target_path=target_path,
+            output_dir=output_dir,
+        )
+        if not raw_target or rebased_target == raw_target:
+            return match.group(0)
+        return match.group(0).replace(raw_target, rebased_target, 1)
+
+    rebased = MARKDOWN_TARGET.sub(replace_markdown_target, body)
+    rebased = HTML_ASSET.sub(replace_html_target, rebased)
+    return rebased
+
+
+def _preserved_body_from_existing_note(
+    *,
+    source_path: Path,
+    target_path: Path,
+    output_dir: Path,
+    doc_guid: str,
+) -> str | None:
+    if not source_path.exists():
+        return None
+    try:
+        text = source_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    if _parse_frontmatter_fields(text).get("wiz_doc_guid") != doc_guid:
+        return None
+
+    body = _strip_frontmatter(text)
+    if not body:
+        return None
+    return _rebase_preserved_body_links(
+        body,
+        source_path=source_path,
+        target_path=target_path,
+        output_dir=output_dir,
+    )
 
 
 def _missing_asset_callout(target: str) -> str:
@@ -249,6 +380,7 @@ def export_inventory(
     output_dir: Path,
     limit: int | None = None,
     note_relative_paths_by_doc_guid: dict[str, Path] | None = None,
+    existing_note_paths_by_doc_guid: dict[str, Path] | None = None,
     write_report: bool = True,
     write_content_audit_files: bool = True,
     progress: Callable[[str], None] | None = None,
@@ -263,7 +395,9 @@ def export_inventory(
     missing_bodies: set[str] = set()
     missing_resources: set[str] = set()
     note_paths_by_doc_guid: dict[str, Path] = {}
+    note_markdowns_by_doc_guid: dict[str, str] = {}
     missing_resources_by_doc_guid: dict[str, tuple[str, ...]] = {}
+    sync_state_notes_by_doc_guid: dict[str, SyncStateNote] = {}
 
     total_notes = len(notes)
     for index, note in enumerate(notes, start=1):
@@ -332,6 +466,7 @@ def export_inventory(
                 exported_attachments.add(asset_path)
 
         attachment_lines: list[str] = []
+        missing_attachment_bytes = False
         for attachment in note.attachments:
             attachment_key = make_attachment_key(note.doc_guid, attachment.name)
             payload = None
@@ -343,6 +478,7 @@ def export_inventory(
                     break
             if payload is None:
                 missing_resources.add(attachment_key)
+                missing_attachment_bytes = True
                 attachment_lines.append(f"- {attachment.name} (missing local bytes)")
                 continue
 
@@ -356,12 +492,44 @@ def export_inventory(
                 resource_paths.setdefault(candidate_key, relative_attachment_path)
             resource_paths.setdefault(f"wiz-attachment://{attachment.name}", relative_attachment_path)
 
-        note_markdown = render_note_markdown(note_for_export, resource_paths)
-        note_markdown = _append_attachment_section(note_markdown, attachment_lines)
-        note_markdown = _replace_missing_assets(note_markdown, note_missing_resources)
-        note_path.write_text(note_markdown, encoding="utf-8")
+        preserved_body = None
+        if not note.body.has_meaningful_content:
+            fallback_paths = [note_path]
+            if existing_note_paths_by_doc_guid is not None:
+                fallback_path = existing_note_paths_by_doc_guid.get(note.doc_guid)
+                if fallback_path is not None and fallback_path not in fallback_paths:
+                    fallback_paths.append(fallback_path)
+            for candidate_path in fallback_paths:
+                preserved_body = _preserved_body_from_existing_note(
+                    source_path=candidate_path,
+                    target_path=note_path,
+                    output_dir=output_dir,
+                    doc_guid=note.doc_guid,
+                )
+                if preserved_body is not None:
+                    break
+
+        if preserved_body is not None:
+            note_markdown = f"{render_frontmatter(note_for_export)}\n\n{preserved_body.rstrip()}\n"
+        else:
+            note_markdown = render_note_markdown(note_for_export, resource_paths)
+            note_markdown = _append_attachment_section(note_markdown, attachment_lines)
+            note_markdown = _replace_missing_assets(note_markdown, note_missing_resources)
+        if not note_path.exists() or note_path.read_text(encoding="utf-8") != note_markdown:
+            note_path.write_text(note_markdown, encoding="utf-8")
         note_paths_by_doc_guid[note.doc_guid] = note_path
+        note_markdowns_by_doc_guid[note.doc_guid] = note_markdown
         missing_resources_by_doc_guid[note.doc_guid] = tuple(sorted(note_missing_resources))
+        sync_state_notes_by_doc_guid[note.doc_guid] = SyncStateNote(
+            doc_guid=note.doc_guid,
+            relative_path=note_relative_path,
+            updated=note.updated_at.isoformat() if note.updated_at is not None else None,
+            needs_repair=(
+                not note.body.has_meaningful_content
+                or bool(note_missing_resources)
+                or missing_attachment_bytes
+            ),
+        )
 
         if note.body.has_meaningful_content:
             exported_notes += 1
@@ -387,13 +555,19 @@ def export_inventory(
             output_dir=output_dir,
             note_paths_by_doc_guid=note_paths_by_doc_guid,
             missing_resources_by_doc_guid=missing_resources_by_doc_guid,
+            note_markdowns_by_doc_guid=note_markdowns_by_doc_guid,
         )
         report["content_integrity"] = dict(content_audit["summary"])
     if write_report:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    return ExportResult(output_dir=output_dir, report_path=report_path, report=report)
+    return ExportResult(
+        output_dir=output_dir,
+        report_path=report_path,
+        report=report,
+        sync_state=SyncState(notes_by_doc_guid=sync_state_notes_by_doc_guid),
+    )
 
 
 __all__ = ["ExportResult", "export_inventory"]
