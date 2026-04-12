@@ -1,0 +1,136 @@
+<mxfile host="app.diagrams.net" modified="2026-04-12T23:40:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="wiz-obsidian-architecture" name="架构图">
+    <mxGraphModel background="#F2EFE8" grid="0" tooltips="0" connect="0" arrows="0" fold="0" page="0" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="border" value="" style="rounded=0;arcSize=3;fillColor=none;strokeColor=#B9B3AB;strokeWidth=1.5;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1614" height="1030" as="geometry"/>
+        </mxCell>
+        <mxCell id="title" value="Wiz To Obsidian 项目架构" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontStyle=1;fontSize=32;fontColor=#1F1F1C;" vertex="1" parent="1">
+          <mxGeometry x="130" y="50" width="1390" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="g_entry" value="&lt;font style=&quot;font-size: 22px;&quot;&gt;入口&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;arcSize=4;fillColor=#FAF8F4;strokeColor=#8C867F;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#5F5A54;swimlane;startSize=63;horizontal=1;html=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="140" width="260" height="380" as="geometry"/>
+        </mxCell>
+        <mxCell id="n1" value="用户 / 定时任务" style="rounded=1;whiteSpace=wrap;html=1;arcSize=50;fillColor=#F8E9E1;strokeColor=#D88966;strokeWidth=1.8;fontColor=#D88966;fontSize=20;fontStyle=1;" vertex="1" parent="g_entry">
+          <mxGeometry x="30" y="80" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="n2" value="scripts/&lt;br&gt;sync_wiz_to_obsidian.py" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#E6E2DA;strokeColor=#8C867F;strokeWidth=1.8;fontColor=#2D2B28;fontSize=18;" vertex="1" parent="g_entry">
+          <mxGeometry x="20" y="180" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="n3" value="cli.py" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EEEAF9;strokeColor=#9A90D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=20;" vertex="1" parent="g_entry">
+          <mxGeometry x="40" y="300" width="180" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="g_core" value="&lt;font style=&quot;font-size: 22px;&quot;&gt;同步核心&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;arcSize=4;fillColor=#FAF8F4;strokeColor=#8C867F;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#5F5A54;swimlane;startSize=63;horizontal=1;html=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="140" width="840" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="g_scan" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;扫描与补全&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;arcSize=6;fillColor=#FAF8F4;strokeColor=#8C867F;strokeWidth=1.8;fontSize=16;fontStyle=1;fontColor=#5F5A54;swimlane;startSize=50;horizontal=1;html=1;" vertex="1" parent="g_core">
+          <mxGeometry x="30" y="80" width="360" height="250" as="geometry"/>
+        </mxCell>
+        <mxCell id="n4" value="wiz_local.py" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EAF4FB;strokeColor=#6FA8D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=20;" vertex="1" parent="g_scan">
+          <mxGeometry x="30" y="70" width="140" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="n5" value="wiz_hydration.py" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EEEAF9;strokeColor=#9A90D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=18;" vertex="1" parent="g_scan">
+          <mxGeometry x="190" y="70" width="140" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="n6" value="models.py + config.py" style="rounded=1;whiteSpace=wrap;html=1;arcSize=50;fillColor=#EFECE6;strokeColor=#B4AEA6;strokeWidth=1.8;fontColor=#7A756E;fontSize=18;" vertex="1" parent="g_scan">
+          <mxGeometry x="90" y="180" width="180" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="g_export" value="&lt;font style=&quot;font-size: 20px;&quot;&gt;增量同步与导出&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;arcSize=6;fillColor=#FAF8F4;strokeColor=#8C867F;strokeWidth=1.8;fontSize=16;fontStyle=1;fontColor=#5F5A54;swimlane;startSize=50;horizontal=1;html=1;" vertex="1" parent="g_core">
+          <mxGeometry x="430" y="80" width="360" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="n7" value="sync.py" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EEEAF9;strokeColor=#9A90D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=20;" vertex="1" parent="g_export">
+          <mxGeometry x="100" y="70" width="160" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="n8" value="exporter.py +&lt;br&gt;markdown_export.py" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#E6E2DA;strokeColor=#8C867F;strokeWidth=1.8;fontColor=#2D2B28;fontSize=18;" vertex="1" parent="g_export">
+          <mxGeometry x="60" y="180" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="n9" value="content_audit.py +&lt;br&gt;reporting.py" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EAF4FB;strokeColor=#6FA8D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=18;" vertex="1" parent="g_export">
+          <mxGeometry x="80" y="290" width="200" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="g_source" value="&lt;font style=&quot;font-size: 22px;&quot;&gt;Wiz 数据源&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;arcSize=4;fillColor=#FAF8F4;strokeColor=#8C867F;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#5F5A54;swimlane;startSize=63;horizontal=1;html=1;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="140" width="300" height="480" as="geometry"/>
+        </mxCell>
+        <mxCell id="n10" value="Wiz IndexedDB / Blob" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EAF4FB;strokeColor=#6FA8D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=18;" vertex="1" parent="g_source">
+          <mxGeometry x="40" y="70" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="n11" value="Chromium Cache" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EAF4FB;strokeColor=#6FA8D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=20;" vertex="1" parent="g_source">
+          <mxGeometry x="40" y="190" width="220" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="n12" value="Remote Wiz API" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EAF4FB;strokeColor=#6FA8D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=20;" vertex="1" parent="g_source">
+          <mxGeometry x="40" y="310" width="220" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="g_output" value="&lt;font style=&quot;font-size: 22px;&quot;&gt;Obsidian 导出&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;arcSize=4;fillColor=#FAF8F4;strokeColor=#8C867F;strokeWidth=2;fontSize=18;fontStyle=1;fontColor=#5F5A54;swimlane;startSize=63;horizontal=1;html=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="820" width="1190" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="n13" value="Markdown 笔记" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#CFE8D7;strokeColor=#71AE88;strokeWidth=1.8;fontColor=#2D2B28;fontSize=20;" vertex="1" parent="g_output">
+          <mxGeometry x="40" y="70" width="240" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="n14" value="_wiz/resources + attachments" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EAF4FB;strokeColor=#6FA8D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=18;" vertex="1" parent="g_output">
+          <mxGeometry x="350" y="70" width="320" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="n15" value="_wiz/state + report" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EEEAF9;strokeColor=#9A90D6;strokeWidth=1.8;fontColor=#2D2B28;fontSize=20;" vertex="1" parent="g_output">
+          <mxGeometry x="760" y="70" width="320" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e1" value="" edge="1" source="n1" target="n2" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" edge="1" source="n2" target="n3" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="扫描" edge="1" source="n3" target="n4" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="缺失补全" edge="1" source="n3" target="n5" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#9A948C;strokeWidth=1.6;rounded=1;dashed=1;dashPattern=6 6;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="inventory" edge="1" source="n4" target="n7" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="补全后 inventory" edge="1" source="n5" target="n7" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" value="增量计划" edge="1" source="n7" target="n8" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="" edge="1" source="n8" target="n9" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#9A948C;strokeWidth=1.6;rounded=1;dashed=1;dashPattern=6 6;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" value="" edge="1" source="n10" target="n4" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7FB08F;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e10" value="" edge="1" source="n11" target="n5" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7FB08F;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e11" value="" edge="1" source="n12" target="n5" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7FB08F;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e12" value="" edge="1" source="n6" target="n4" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#9A948C;strokeWidth=1.6;rounded=1;dashed=1;dashPattern=6 6;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e13" value="" edge="1" source="n6" target="n7" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#9A948C;strokeWidth=1.6;rounded=1;dashed=1;dashPattern=6 6;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e14" value="" edge="1" source="n8" target="n13" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e15" value="" edge="1" source="n8" target="n14" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e16" value="" edge="1" source="n7" target="n15" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7A756E;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e17" value="" edge="1" source="n9" target="n15" style="endArrow=open;endSize=14;edgeStyle=orthogonalEdgeStyle;strokeColor=#7FB08F;strokeWidth=1.8;rounded=1;fontSize=16;fontColor=#5F5A54;" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
