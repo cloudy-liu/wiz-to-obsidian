@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -24,7 +25,26 @@ def load_script_module(testcase: unittest.TestCase):
     return module
 
 
+_WIZ_ENV_KEYS = frozenset({
+    "WIZ_USER_ID", "WIZ_PASSWORD", "WIZ_TOKEN",
+    "WIZ_AUTO_LOGIN_PARAM", "WIZ_SERVER_URL", "WIZ_KS_URL",
+    "WIZ_TO_OBSIDIAN_OUTPUT_DIR", "WIZ_LEVELDB_DIR", "WIZ_BLOB_DIR", "WIZ_CACHE_DIR",
+})
+
+
+def _clean_wiz_environ() -> dict[str, str]:
+    """Return os.environ with Wiz-related keys removed."""
+    return {k: v for k, v in os.environ.items() if k not in _WIZ_ENV_KEYS}
+
+
 class SyncScriptTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_environ = dict(os.environ)
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._original_environ)
+
     def test_build_export_args_includes_hydration_by_default(self) -> None:
         module = load_script_module(self)
 
@@ -84,7 +104,11 @@ class SyncScriptTests(unittest.TestCase):
         module = load_script_module(self)
         stdout = io.StringIO()
 
-        with contextlib.redirect_stdout(stdout), mock.patch.object(module.subprocess, "run") as run:
+        with (
+            contextlib.redirect_stdout(stdout),
+            mock.patch.object(module.subprocess, "run") as run,
+            mock.patch.dict(module.os.environ, _clean_wiz_environ(), clear=True),
+        ):
             exit_code = module.main(["--dry-run", "--output", "D:\\vault\\Wiz", "--no-hydrate", "--limit", "5"])
 
         self.assertEqual(0, exit_code)
@@ -99,7 +123,11 @@ class SyncScriptTests(unittest.TestCase):
         module = load_script_module(self)
         stdout = io.StringIO()
 
-        with contextlib.redirect_stdout(stdout), mock.patch.object(module.subprocess, "run") as run:
+        with (
+            contextlib.redirect_stdout(stdout),
+            mock.patch.object(module.subprocess, "run") as run,
+            mock.patch.dict(module.os.environ, _clean_wiz_environ(), clear=True),
+        ):
             exit_code = module.main(["--dry-run", "--output", "D:\\vault\\Wiz", "--full"])
 
         self.assertEqual(0, exit_code)
@@ -113,13 +141,16 @@ class SyncScriptTests(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
 
-        with (
-            contextlib.redirect_stdout(stdout),
-            contextlib.redirect_stderr(stderr),
-            mock.patch.dict(module.os.environ, {}, clear=True),
-        ):
-            with self.assertRaises(SystemExit) as error:
-                module.main(["--dry-run"])
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            with (
+                contextlib.redirect_stdout(stdout),
+                contextlib.redirect_stderr(stderr),
+                mock.patch.object(module, "repo_root", return_value=temp_root),
+                mock.patch.dict(module.os.environ, {}, clear=True),
+            ):
+                with self.assertRaises(SystemExit) as error:
+                    module.main(["--dry-run"])
 
         self.assertEqual(2, error.exception.code)
         self.assertIn("--output", stderr.getvalue())
@@ -166,7 +197,11 @@ class SyncScriptTests(unittest.TestCase):
         stdout = io.StringIO()
         time_values = iter([10.0, 12.5])
 
-        with contextlib.redirect_stdout(stdout), mock.patch.object(module.subprocess, "run") as run:
+        with (
+            contextlib.redirect_stdout(stdout),
+            mock.patch.object(module.subprocess, "run") as run,
+            mock.patch.dict(module.os.environ, _clean_wiz_environ(), clear=True),
+        ):
             exit_code = module.main(["--dry-run", "--output", "D:\\vault\\Wiz"], time_fn=lambda: next(time_values))
 
         self.assertEqual(0, exit_code)

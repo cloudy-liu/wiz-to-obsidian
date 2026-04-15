@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "wiz-to-obsidian"
+version = "0.1.0"
+description = "Export WizNote notes to Obsidian-compatible Markdown"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "ccl_chromium_reader @ git+https://github.com/cclgroupltd/ccl_chromium_reader.git@552516720761397c4d482908b6b8b08130b313a1",
+    "markdownify==1.2.2",
+    "websocket-client==1.9.0",
+]
+
+[project.scripts]
+wiz-to-obsidian = "wiz_to_obsidian.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,92 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -e .
+
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --name wiz-to-obsidian src/wiz_to_obsidian/__main__.py
+
+      - name: Set archive name
+        id: archive
+        shell: bash
+        run: echo "name=wiz-to-obsidian-${GITHUB_REF_NAME}-${{ matrix.platform }}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Package artifact (Windows)
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force staging
+          Copy-Item dist\wiz-to-obsidian.exe staging\
+          Copy-Item README.md staging\
+          Copy-Item LICENSE staging\
+          Compress-Archive -Path staging\* -DestinationPath ${{ steps.archive.outputs.name }}
+
+      - name: Package artifact (macOS / Linux)
+        if: ${{ matrix.platform != 'windows' }}
+        run: |
+          mkdir -p staging
+          cp dist/wiz-to-obsidian staging/
+          cp README.md staging/
+          cp LICENSE staging/
+          cd staging
+          zip ../${{ steps.archive.outputs.name }} *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiz-to-obsidian-${{ matrix.platform }}
+          path: ${{ steps.archive.outputs.name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+          generate_release_notes: true

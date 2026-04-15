@@ -314,16 +314,19 @@ def _collect_note_bodies_from_data(
     return body_by_doc, resource_bytes_by_key, attachment_bytes_by_key
 
 
-def _collect_editor_bodies(
+def _stream_editor_bodies(
     *,
-    editor_records: Sequence[Mapping[str, object]],
+    source: WizRecordSource,
     kb_guid: str,
     live_doc_guids: set[str],
 ) -> dict[str, NoteBody]:
     bodies: dict[str, NoteBody] = {}
-    for record in editor_records:
+    remaining = set(live_doc_guids)
+    for record in source.iter_store_values("wiz-editor-ot", "docs", skip_bad=True):
+        if not remaining:
+            break
         raw_kb_guid, doc_guid = _parse_editor_doc_guid(record.get("id"))
-        if not doc_guid or doc_guid not in live_doc_guids:
+        if not doc_guid or doc_guid not in remaining:
             continue
         if raw_kb_guid and raw_kb_guid != kb_guid:
             continue
@@ -338,6 +341,7 @@ def _collect_editor_bodies(
                 generated_assets=rendered.generated_assets,
                 metadata=rendered.metadata,
             )
+            remaining.discard(doc_guid)
     return bodies
 
 
@@ -434,7 +438,6 @@ def load_local_note_payloads(
         for record in source.iter_store_values(user_db, "data")
         if _matches_kb(record, kb_guid) and str(record.get("docGuid") or "") in target_doc_guids
     ]
-    editor_records = list(source.iter_store_values("wiz-editor-ot", "docs", skip_bad=True))
 
     body_by_doc, resource_bytes_by_key, attachment_bytes_by_key = _collect_note_bodies_from_data(
         data_records=data_records,
@@ -442,8 +445,8 @@ def load_local_note_payloads(
         doc_guids=target_doc_guids,
     )
     body_by_doc.update(
-        _collect_editor_bodies(
-            editor_records=editor_records,
+        _stream_editor_bodies(
+            source=source,
             kb_guid=kb_guid,
             live_doc_guids=target_doc_guids,
         )

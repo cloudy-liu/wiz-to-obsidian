@@ -38,30 +38,78 @@ class HydrationResult:
     inventory: Inventory
     summary: dict[str, int]
     note_repair_status: dict[str, bool] | None = None
+    hydration_source_summary: dict[str, int] | None = None
+    cache_unavailable: bool = False
+
+
+SOURCE_CACHE = "cache"
+SOURCE_REMOTE = "remote"
+
+
+class HydrationSourceTracker:
+    """Thread-safe tracker for which hydration source (cache or remote) provided results."""
+
+    def __init__(self, cache_available: bool) -> None:
+        self.cache_available = cache_available
+        self._note_sources: dict[str, str] = {}
+        self._resource_sources: dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def record_note_source(self, doc_guid: str, source: str) -> None:
+        with self._lock:
+            self._note_sources[doc_guid] = source
+
+    def record_resource_source(self, key: str, source: str) -> None:
+        with self._lock:
+            self._resource_sources[key] = source
+
+    @property
+    def source_summary(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for source in self._note_sources.values():
+            counts[source] = counts.get(source, 0) + 1
+        for source in self._resource_sources.values():
+            counts[source] = counts.get(source, 0) + 1
+        return counts
 
 
 class CompositeWizContentClient:
     def __init__(self, clients: Sequence[WizContentClient]) -> None:
         self._clients = tuple(client for client in clients)
+        self.source_tracker: HydrationSourceTracker | None = None
 
-    def fetch_note_body(self, note: WizNote) -> NoteBody:
-        for client in self._clients:
+    def fetch_note_body(self, note: WizNote, *, force_refresh: bool = False) -> NoteBody:
+        for i, client in enumerate(self._clients):
+            if force_refresh and i == 0:
+                continue
             body = client.fetch_note_body(note)
             if body.has_meaningful_content:
+                if self.source_tracker is not None:
+                    self.source_tracker.record_note_source(note.doc_guid, SOURCE_CACHE if i == 0 else SOURCE_REMOTE)
                 return body
         return NoteBody()
 
     def fetch_resource(self, note: WizNote, resource_name: str) -> bytes | None:
-        for client in self._clients:
+        for i, client in enumerate(self._clients):
             payload = client.fetch_resource(note, resource_name)
             if payload is not None and not _is_placeholder_resource_payload(payload):
+                if self.source_tracker is not None:
+                    self.source_tracker.record_resource_source(
+                        make_resource_key(note.doc_guid, resource_name),
+                        SOURCE_CACHE if i == 0 else SOURCE_REMOTE,
+                    )
                 return payload
         return None
 
     def fetch_attachment(self, note: WizNote, attachment: AttachmentRecord) -> bytes | None:
-        for client in self._clients:
+        for i, client in enumerate(self._clients):
             payload = client.fetch_attachment(note, attachment)
             if payload is not None:
+                if self.source_tracker is not None:
+                    self.source_tracker.record_resource_source(
+                        make_attachment_key(note.doc_guid, attachment.name),
+                        SOURCE_CACHE if i == 0 else SOURCE_REMOTE,
+                    )
                 return payload
         return None
 
@@ -168,7 +216,9 @@ def _hydrate_single_note(
     body_changed = False
 
     if force_refresh_note_body or not body.has_meaningful_content or missing_resource_names:
-        fetched_body, fetch_failed = _safe_fetch_note_body(client, note, local_summary)
+        fetched_body, fetch_failed = _safe_fetch_note_body(
+            client, note, local_summary, force_refresh=force_refresh_note_body,
+        )
         if fetched_body.has_meaningful_content and fetched_body != body:
             body = fetched_body
             local_summary["hydrated_notes"] += 1
@@ -230,11 +280,14 @@ class _SingleNoteHydrationResult:
 
 
 def _safe_fetch_note_body(
-    client: WizContentClient, note: WizNote, summary: dict[str, int]
+    client: WizContentClient, note: WizNote, summary: dict[str, int], *, force_refresh: bool = False,
 ) -> tuple[NoteBody, bool]:
     for attempt in range(FETCH_RETRY_ATTEMPTS):
         try:
-            return client.fetch_note_body(note), False
+            try:
+                return client.fetch_note_body(note, force_refresh=force_refresh), False
+            except TypeError:
+                return client.fetch_note_body(note), False
         except Exception:
             if attempt == FETCH_RETRY_ATTEMPTS - 1:
                 summary["hydration_failures"] += 1
@@ -392,16 +445,25 @@ def hydrate_inventory(
         resource_bytes_by_key=resource_bytes_by_key,
         attachment_bytes_by_key=attachment_bytes_by_key,
     )
+    # Extract source tracking info if available
+    source_tracker = getattr(client, "source_tracker", None)
+    source_summary = source_tracker.source_summary if source_tracker is not None else None
+    cache_unavailable = not source_tracker.cache_available if source_tracker is not None else False
     return HydrationResult(
         inventory=hydrated_inventory,
         summary=summary,
         note_repair_status=note_repair_status,
+        hydration_source_summary=source_summary,
+        cache_unavailable=cache_unavailable,
     )
 
 
 __all__ = [
     "CompositeWizContentClient",
     "HydrationResult",
+    "HydrationSourceTracker",
+    "SOURCE_CACHE",
+    "SOURCE_REMOTE",
     "WizContentClient",
     "hydrate_inventory",
 ]

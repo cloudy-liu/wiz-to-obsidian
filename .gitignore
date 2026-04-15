@@ -3,6 +3,7 @@
 !.env.example
 .mcp.json
 .venv/
+CLAUDE.md
 
 __pycache__/
 *.py[cod]

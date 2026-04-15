@@ -343,6 +343,17 @@ def incremental_sync_inventory(
         )
         plan = plan_incremental_sync(scoped_inventory, output_dir, sync_state=base_state)
     else:
+        if limit is not None and len(plan.notes_to_export) > limit:
+            plan_notes = plan.notes_to_export[:limit]
+            plan_guids = {n.doc_guid for n in plan_notes}
+            extra_skipped = tuple(n.doc_guid for n in plan.notes_to_export[limit:])
+            plan = IncrementalSyncPlan(
+                notes_to_export=plan_notes,
+                note_relative_paths_by_doc_guid={g: p for g, p in plan.note_relative_paths_by_doc_guid.items() if g in plan_guids},
+                skipped_doc_guids=plan.skipped_doc_guids + extra_skipped,
+                stale_paths_to_remove=plan.stale_paths_to_remove,
+                reasons_by_doc_guid={g: r for g, r in plan.reasons_by_doc_guid.items() if g in plan_guids},
+            )
         scoped_inventory = Inventory(
             notes=tuple(plan.notes_to_export),
             resource_bytes_by_key=inventory.resource_bytes_by_key,

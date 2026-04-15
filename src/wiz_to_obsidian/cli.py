@@ -12,9 +12,9 @@ from typing import TextIO
 from .config import default_blob_dir, default_cache_dir, default_export_dir, default_leveldb_dir
 from .exporter import export_inventory
 from .models import Inventory
-from .sync import incremental_sync_inventory, load_or_rebuild_sync_state, plan_incremental_sync, write_sync_state
+from .sync import IncrementalSyncPlan, incremental_sync_inventory, load_or_rebuild_sync_state, plan_incremental_sync, write_sync_state
 from .wiz_cache import CachedWizClient, ChromiumCacheBackend
-from .wiz_hydration import CompositeWizContentClient, HydrationResult, hydrate_inventory
+from .wiz_hydration import CompositeWizContentClient, HydrationResult, HydrationSourceTracker, hydrate_inventory
 from .wiz_local import load_local_note_payloads, scan_local_wiz, scan_local_wiz_metadata, summarize_inventory
 from .wiz_remote import RemoteWizConfig, RemoteWizClient
 
@@ -200,6 +200,7 @@ def _select_inventory_doc_guids(inventory: Inventory, doc_guids: set[str]) -> In
 def _build_hydration_client(args) -> CompositeWizContentClient | CachedWizClient | RemoteWizClient:
     clients = []
     cache_auth = None
+    cache_available = False
 
     cache_dir = getattr(args, "cache_dir", None)
     if cache_dir:
@@ -209,6 +210,7 @@ def _build_hydration_client(args) -> CompositeWizContentClient | CachedWizClient
             cached_client = None
         if cached_client is not None:
             clients.append(cached_client)
+            cache_available = True
             if cached_client.cached_auth.token:
                 cache_auth = cached_client.cached_auth
 
@@ -235,7 +237,9 @@ def _build_hydration_client(args) -> CompositeWizContentClient | CachedWizClient
         raise RuntimeError("No hydration source available. Configure Wiz credentials or close WizNote for cache access.")
     if len(clients) == 1:
         return clients[0]
-    return CompositeWizContentClient(clients)
+    composite = CompositeWizContentClient(clients)
+    composite.source_tracker = HydrationSourceTracker(cache_available=cache_available)
+    return composite
 
 
 def main(
@@ -363,6 +367,19 @@ def main(
             sync_state=sync_state_load_result.state,
             remote_versions=remote_versions,
         )
+        if args.limit is not None and len(preplan.notes_to_export) > args.limit:
+            limited_notes = preplan.notes_to_export[:args.limit]
+            limited_guids = {n.doc_guid for n in limited_notes}
+            limited_reasons = {g: preplan.reasons_by_doc_guid[g] for g in limited_guids if g in preplan.reasons_by_doc_guid}
+            limited_paths = {g: preplan.note_relative_paths_by_doc_guid[g] for g in limited_guids if g in preplan.note_relative_paths_by_doc_guid}
+            extra_skipped = tuple(n.doc_guid for n in preplan.notes_to_export[args.limit:])
+            preplan = IncrementalSyncPlan(
+                notes_to_export=limited_notes,
+                note_relative_paths_by_doc_guid=limited_paths,
+                skipped_doc_guids=preplan.skipped_doc_guids + extra_skipped,
+                stale_paths_to_remove=preplan.stale_paths_to_remove,
+                reasons_by_doc_guid=limited_reasons,
+            )
         planning_duration = _format_duration(time_fn() - planning_started_at)
         planning_summary = {
             "state_source": sync_state_load_result.source,
@@ -385,15 +402,46 @@ def main(
         inventory = Inventory(notes=())
         if changed_doc_guids:
             payload_started_at = time_fn()
-            _write_progress(stderr, "scan", f"loading local payloads for {len(changed_doc_guids)} planned notes")
-            payload_inventory = _call_with_supported_kwargs(
-                load_note_payloads_fn,
-                metadata_inventory=metadata_inventory,
-                doc_guids=changed_doc_guids,
-                leveldb_dir=args.leveldb_dir,
-                blob_dir=args.blob_dir,
-            )
-            inventory = _select_inventory_doc_guids(payload_inventory, changed_doc_guids)
+            collab_guids: set[str] = set()
+            if args.hydrate_missing:
+                collab_guids = {
+                    n.doc_guid for n in metadata_inventory.notes
+                    if n.doc_guid in changed_doc_guids and n.note_type == "collaboration"
+                }
+            non_collab_guids = changed_doc_guids - collab_guids
+            if collab_guids:
+                _write_progress(stderr, "scan", f"skipping local payloads for {len(collab_guids)} collaboration notes (hydration will fill)")
+            if non_collab_guids:
+                _write_progress(stderr, "scan", f"loading local payloads for {len(non_collab_guids)} planned notes")
+                payload_inventory = _call_with_supported_kwargs(
+                    load_note_payloads_fn,
+                    metadata_inventory=metadata_inventory,
+                    doc_guids=non_collab_guids,
+                    leveldb_dir=args.leveldb_dir,
+                    blob_dir=args.blob_dir,
+                )
+                inventory = _select_inventory_doc_guids(payload_inventory, non_collab_guids)
+            elif not collab_guids:
+                # No hydration split — load all changed note payloads
+                _write_progress(stderr, "scan", f"loading local payloads for {len(changed_doc_guids)} planned notes")
+                payload_inventory = _call_with_supported_kwargs(
+                    load_note_payloads_fn,
+                    metadata_inventory=metadata_inventory,
+                    doc_guids=changed_doc_guids,
+                    leveldb_dir=args.leveldb_dir,
+                    blob_dir=args.blob_dir,
+                )
+                inventory = _select_inventory_doc_guids(payload_inventory, changed_doc_guids)
+            # Merge collaboration notes from metadata_inventory (with metadata, no payloads)
+            if collab_guids:
+                collab_notes = tuple(n for n in metadata_inventory.notes if n.doc_guid in collab_guids)
+                existing_guids = {n.doc_guid for n in inventory.notes}
+                all_notes = tuple(n for n in inventory.notes) + tuple(n for n in collab_notes if n.doc_guid not in existing_guids)
+                inventory = Inventory(
+                    notes=all_notes,
+                    resource_bytes_by_key=inventory.resource_bytes_by_key,
+                    attachment_bytes_by_key=inventory.attachment_bytes_by_key,
+                )
             payload_duration = _format_duration(time_fn() - payload_started_at)
             _write_progress(stderr, "scan", f"payload load done in {payload_duration}")
             stage_timings["payload_load"] = payload_duration
@@ -428,6 +476,8 @@ def main(
                         f"failures={hydration_result.summary.get('hydration_failures', 0)}"
                     ),
                 )
+                if getattr(hydration_result, "cache_unavailable", False):
+                    _write_progress(stderr, "hydrate", "WARNING: local cache unavailable (WizNote may be running); degraded to remote-only")
             finally:
                 close = getattr(hydration_client, "close", None)
                 if callable(close):
@@ -492,6 +542,8 @@ def main(
                         f"failures={hydration_result.summary.get('hydration_failures', 0)}"
                     ),
                 )
+                if getattr(hydration_result, "cache_unavailable", False):
+                    _write_progress(stderr, "hydrate", "WARNING: local cache unavailable (WizNote may be running); degraded to remote-only")
             finally:
                 close = getattr(hydration_client, "close", None)
                 if callable(close):
@@ -520,6 +572,10 @@ def main(
     payload["report_path"] = str(result.report_path)
     if hydration_result is not None:
         payload["hydration"] = dict(hydration_result.summary)
+        if getattr(hydration_result, "hydration_source_summary", None) is not None:
+            payload["hydration"]["source_breakdown"] = hydration_result.hydration_source_summary
+        if getattr(hydration_result, "cache_unavailable", False):
+            payload["hydration"]["cache_unavailable"] = True
     if planning_summary is not None:
         payload["planning"] = planning_summary
     if stage_timings:

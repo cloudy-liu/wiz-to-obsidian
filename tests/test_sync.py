@@ -515,6 +515,49 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(123, result.sync_state.doc_version)
             self.assertEqual(123, written_state.doc_version)
 
+    def test_incremental_sync_inventory_respects_limit_with_prebuilt_plan(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        sync = import_or_fail(self, "wiz_to_obsidian.sync")
+
+        note1 = models.WizNote(
+            kb_name="KB", kb_guid="kb-1", doc_guid="doc-a",
+            title="First", folder_parts=("Inbox",),
+            updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+            body=models.NoteBody(markdown="# A"),
+        )
+        note2 = models.WizNote(
+            kb_name="KB", kb_guid="kb-1", doc_guid="doc-b",
+            title="Second", folder_parts=("Inbox",),
+            updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+            body=models.NoteBody(markdown="# B"),
+        )
+        inventory = models.Inventory(notes=(note1, note2))
+        plan = sync.IncrementalSyncPlan(
+            notes_to_export=(note1, note2),
+            note_relative_paths_by_doc_guid={
+                "doc-a": Path("Inbox") / "First.md",
+                "doc-b": Path("Inbox") / "Second.md",
+            },
+            skipped_doc_guids=(),
+            stale_paths_to_remove=(),
+            reasons_by_doc_guid={"doc-a": "new", "doc-b": "new"},
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            result = sync.incremental_sync_inventory(
+                inventory=inventory,
+                output_dir=output_dir,
+                limit=1,
+                plan=plan,
+                sync_state=models.SyncState(notes_by_doc_guid={}),
+            )
+
+            # Only 1 note should be exported
+            self.assertEqual(1, result.report["summary"]["exported_notes"])
+            # The other should be in skipped
+            self.assertIn("doc-a", {n.doc_guid for n in result.sync_state.notes_by_doc_guid.values()} if hasattr(result.sync_state.notes_by_doc_guid, 'values') else [])
+
 
 if __name__ == "__main__":
     unittest.main()

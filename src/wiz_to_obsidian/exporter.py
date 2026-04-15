@@ -479,6 +479,7 @@ def export_inventory(
             if payload is None:
                 missing_resources.add(attachment_key)
                 missing_attachment_bytes = True
+                note_missing_resources.add(attachment_key)
                 attachment_lines.append(f"- {attachment.name} (missing local bytes)")
                 continue
 

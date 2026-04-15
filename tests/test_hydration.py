@@ -451,3 +451,161 @@ class HydrationTests(unittest.TestCase):
             result.inventory.resource_bytes_by_key["wiz-resource://doc-1/diagram.png"],
         )
         self.assertEqual(2, result.summary["hydrated_resources"])
+
+    def test_composite_client_tracks_hydration_sources(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        hydration = import_or_fail(self, "wiz_to_obsidian.wiz_hydration")
+
+        class CacheClient:
+            def fetch_note_body(self, note):
+                return models.NoteBody(markdown=f"cache body for {note.doc_guid}")
+
+            def fetch_resource(self, note, resource_name):
+                return b"cache-resource"
+
+            def fetch_attachment(self, note, attachment):
+                return b"cache-attachment"
+
+        class RemoteClient:
+            def fetch_note_body(self, note):
+                return models.NoteBody()  # not meaningful
+
+            def fetch_resource(self, note, resource_name):
+                return None
+
+            def fetch_attachment(self, note, attachment):
+                return b"remote-attachment"
+
+        cache_client = CacheClient()
+        remote_client = RemoteClient()
+        composite = hydration.CompositeWizContentClient([cache_client, remote_client])
+        tracker = hydration.HydrationSourceTracker(cache_available=True)
+        composite.source_tracker = tracker
+
+        note = models.WizNote(
+            kb_name="KB", kb_guid="kb-1", doc_guid="doc-src",
+            title="Source Test", folder_parts=("Inbox",),
+            body=models.NoteBody(),
+            attachments=(
+                models.AttachmentRecord(att_guid="att-1", doc_guid="doc-src", name="file.pdf", size=10),
+            ),
+        )
+        inventory = models.Inventory(notes=(note,))
+        result = hydration.hydrate_inventory(inventory=inventory, client=composite)
+
+        # Body came from cache (index 0)
+        self.assertEqual("cache", tracker._note_sources.get("doc-src"))
+        # Attachment came from cache
+        self.assertTrue(hydration.make_attachment_key("doc-src", "file.pdf") in tracker._resource_sources)
+        self.assertEqual("cache", tracker._resource_sources[hydration.make_attachment_key("doc-src", "file.pdf")])
+        # Source summary should have counts
+        self.assertIn("cache", tracker.source_summary)
+        # HydrationResult should carry source info
+        self.assertIsNotNone(result.hydration_source_summary)
+        self.assertFalse(result.cache_unavailable)
+
+    def test_hydration_result_reports_cache_unavailable(self) -> None:
+        hydration = import_or_fail(self, "wiz_to_obsidian.wiz_hydration")
+
+        class RemoteOnlyClient:
+            def fetch_note_body(self, note):
+                return models.NoteBody()
+
+            def fetch_resource(self, note, resource_name):
+                return None
+
+            def fetch_attachment(self, note, attachment):
+                return None
+
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        composite = hydration.CompositeWizContentClient([RemoteOnlyClient()])
+        tracker = hydration.HydrationSourceTracker(cache_available=False)
+        composite.source_tracker = tracker
+
+        note = models.WizNote(
+            kb_name="KB", kb_guid="kb-1", doc_guid="doc-no-cache",
+            title="No Cache", folder_parts=("Inbox",),
+            body=models.NoteBody(),
+        )
+        inventory = models.Inventory(notes=(note,))
+        result = hydration.hydrate_inventory(inventory=inventory, client=composite)
+
+        self.assertTrue(result.cache_unavailable)
+
+    def test_composite_client_force_refresh_skips_cache(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        hydration = import_or_fail(self, "wiz_to_obsidian.wiz_hydration")
+
+        class StaleCacheClient:
+            def fetch_note_body(self, note):
+                return models.NoteBody(markdown="stale cached content")
+
+            def fetch_resource(self, note, resource_name):
+                return None
+
+            def fetch_attachment(self, note, attachment):
+                return None
+
+        class FreshRemoteClient:
+            def fetch_note_body(self, note):
+                return models.NoteBody(markdown="fresh remote content")
+
+            def fetch_resource(self, note, resource_name):
+                return None
+
+            def fetch_attachment(self, note, attachment):
+                return None
+
+        composite = hydration.CompositeWizContentClient([StaleCacheClient(), FreshRemoteClient()])
+
+        note = models.WizNote(
+            kb_name="KB", kb_guid="kb-1", doc_guid="doc-refresh",
+            title="Refresh Test", body=models.NoteBody(),
+        )
+
+        # Without force_refresh, cache is used
+        self.assertEqual("stale cached content", composite.fetch_note_body(note).markdown)
+
+        # With force_refresh, cache is skipped
+        self.assertEqual("fresh remote content", composite.fetch_note_body(note, force_refresh=True).markdown)
+
+    def test_hydrate_inventory_force_refresh_uses_remote_not_cache(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        hydration = import_or_fail(self, "wiz_to_obsidian.wiz_hydration")
+
+        note = models.WizNote(
+            kb_name="KB", kb_guid="kb-1", doc_guid="doc-updated",
+            title="Updated Note", body=models.NoteBody(markdown="old content"),
+        )
+        inventory = models.Inventory(notes=(note,))
+
+        class StaleCacheClient:
+            def fetch_note_body(self, n):
+                return models.NoteBody(markdown="old content")
+
+            def fetch_resource(self, n, rn):
+                return None
+
+            def fetch_attachment(self, n, a):
+                return None
+
+        class FreshRemoteClient:
+            def fetch_note_body(self, n):
+                return models.NoteBody(markdown="newly updated content")
+
+            def fetch_resource(self, n, rn):
+                return None
+
+            def fetch_attachment(self, n, a):
+                return None
+
+        composite = hydration.CompositeWizContentClient([StaleCacheClient(), FreshRemoteClient()])
+
+        result = hydration.hydrate_inventory(
+            inventory=inventory,
+            client=composite,
+            refresh_note_bodies_for_doc_guids={"doc-updated"},
+        )
+
+        # The updated note should have the fresh remote content, not stale cache
+        self.assertEqual("newly updated content", result.inventory.notes[0].body.markdown)

@@ -96,6 +96,47 @@ class ContentAuditTests(unittest.TestCase):
             self.assertIn("length_gap", issue_codes)
             self.assertIn("unsupported_blocks", issue_codes)
 
+    def test_export_inventory_tracks_missing_attachments_in_unresolved(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        exporter = import_or_fail(self, "wiz_to_obsidian.exporter")
+
+        note = models.WizNote(
+            kb_name="Main KB",
+            kb_guid="kb-1",
+            doc_guid="doc-missing-att",
+            title="Missing Attachment",
+            note_type="lite/markdown",
+            body=models.NoteBody(markdown="# Note\nSome text"),
+            attachments=(
+                models.AttachmentRecord(
+                    att_guid="att-missing",
+                    doc_guid="doc-missing-att",
+                    name="report.pdf",
+                    size=100,
+                ),
+            ),
+        )
+        # Deliberately omit attachment_bytes_by_key so the attachment is missing
+        inventory = models.Inventory(notes=(note,))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            result = exporter.export_inventory(inventory=inventory, output_dir=output_dir)
+            audit = json.loads((output_dir / "_wiz" / "content_audit.json").read_text(encoding="utf-8"))
+
+            unresolved = {entry["doc_guid"]: entry for entry in audit["unresolved"]}
+            self.assertIn("doc-missing-att", unresolved)
+            issue_codes = {issue["code"] for issue in unresolved["doc-missing-att"]["issues"]}
+            self.assertIn("missing_assets", issue_codes)
+            # Verify the attachment key appears in the missing_assets targets
+            missing_assets_issue = next(i for i in unresolved["doc-missing-att"]["issues"] if i["code"] == "missing_assets")
+            self.assertTrue(
+                any("report.pdf" in target for target in missing_assets_issue["targets"]),
+                f"expected attachment key containing 'report.pdf' in targets, got {missing_assets_issue['targets']}",
+            )
+            # Verify report.summary and needs_repair are consistent
+            self.assertGreater(result.report["summary"]["missing_resource_count"], 0)
+
     def test_export_inventory_uses_visible_html_text_for_length_gap_detection(self) -> None:
         models = import_or_fail(self, "wiz_to_obsidian.models")
         exporter = import_or_fail(self, "wiz_to_obsidian.exporter")
