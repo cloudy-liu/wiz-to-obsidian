@@ -1,4 +1,4 @@
-# Wiz To Obsidian
+# 🧾 Wiz To Obsidian
 
 [English README](README.en.md)
 

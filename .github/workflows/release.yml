@@ -97,5 +97,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: wiz2obs-cli-${{ github.ref_name }}
           files: artifacts/*/*.zip
           generate_release_notes: true

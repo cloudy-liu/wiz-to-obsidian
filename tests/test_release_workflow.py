@@ -19,6 +19,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("binary_name: wiz2obs_cli.exe", text)
         self.assertIn("binary_name: wiz2obs_cli", text)
         self.assertIn("pip install pyinstaller pytest", text)
+        self.assertIn("name: wiz2obs-cli-${{ github.ref_name }}", text)
         self.assertIn("pyinstaller --onefile --name wiz2obs_cli", text)
         self.assertIn("wiz2obs_cli-${GITHUB_REF_NAME}_${{ matrix.platform }}_${{ matrix.arch }}.zip", text)
 
