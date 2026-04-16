@@ -18,7 +18,7 @@ jobs:
             platform: windows
             arch: x64
             binary_name: wiz2obs_cli.exe
-          - os: macos-13
+          - os: macos-latest
             platform: macos
             arch: x64
             binary_name: wiz2obs_cli

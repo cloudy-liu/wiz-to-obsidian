@@ -14,7 +14,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
         self.assertIn("windows-2022", text)
         self.assertIn("ubuntu-22.04", text)
-        self.assertIn("macos-13", text)
+        self.assertIn("macos-latest", text)
         self.assertIn("arch: x64", text)
         self.assertIn("binary_name: wiz2obs_cli.exe", text)
         self.assertIn("binary_name: wiz2obs_cli", text)
