@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -264,7 +265,11 @@ def _strip_frontmatter(text: str) -> str:
 
 def _looks_like_relative_link(target: str) -> bool:
     normalized = target.strip()
-    if not normalized or normalized.startswith(("#", "/", "mailto:", "data:")):
+    if (
+        not normalized
+        or normalized.startswith(("#", "/", "mailto:", "data:"))
+        or re.match(r"^[A-Za-z]:[/\\]", normalized) is not None
+    ):
         return False
     return "://" not in normalized
 
@@ -280,15 +285,21 @@ def _rebase_relative_link_target(
     if not _looks_like_relative_link(normalized):
         return target
 
-    source_root = output_dir.resolve(strict=False)
-    resolved_target = (source_path.parent / Path(normalized)).resolve(strict=False)
     try:
-        resolved_target.relative_to(source_root)
+        source_relative_dir = source_path.parent.relative_to(output_dir).as_posix()
+        target_relative_dir = target_path.parent.relative_to(output_dir).as_posix()
     except ValueError:
         return target
 
-    rebased = Path(os.path.relpath(resolved_target, target_path.parent))
-    return _to_posix(rebased)
+    normalized_target = normalized.replace("\\", "/")
+    resolved_relative_target = posixpath.normpath(posixpath.join(source_relative_dir, normalized_target))
+    if resolved_relative_target in {"", "."}:
+        return target
+    if resolved_relative_target == ".." or resolved_relative_target.startswith("../"):
+        return target
+
+    rebased = posixpath.relpath(resolved_relative_target, start=target_relative_dir)
+    return rebased.replace("\\", "/")
 
 
 def _rebase_preserved_body_links(

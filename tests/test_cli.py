@@ -213,8 +213,9 @@ class CliTests(unittest.TestCase):
             exit_code = cli.main(
                 ["export", "--output", temp_dir, "--incremental"],
                 stdout=stdout,
-                scan_inventory_fn=lambda leveldb_dir, blob_dir: inventory,
-                incremental_sync_inventory_fn=lambda inventory, output_dir, limit=None: FakeSyncResult(Path(temp_dir)),
+                scan_inventory_metadata_fn=lambda leveldb_dir, blob_dir: inventory,
+                load_note_payloads_fn=lambda **kwargs: inventory,
+                incremental_sync_inventory_fn=lambda **kwargs: FakeSyncResult(Path(temp_dir)),
             )
 
             payload = json.loads(stdout.getvalue())
