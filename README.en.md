@@ -127,9 +127,36 @@ Incremental sync currently handles:
 
 - New notes
 - Notes whose body update time changed
+- Notes whose attachment metadata changed even if the body timestamp did not change
 - Notes whose title or category changed their output path
+- Notes marked for repair because the previous export was incomplete
+- Asset refresh when Wiz remote `att_version` advances for notes that already exported resources or attachments
 
-It does not automatically delete files that were removed from Wiz but still exist in the export directory.
+Incremental sync also removes:
+
+- Notes deleted from Wiz
+- Orphaned exported resources under `_wiz/resources/<doc_guid>/`
+- Orphaned exported attachments under `_wiz/attachments/<doc_guid>/`
+
+## Releases
+
+Tagged GitHub releases publish one ZIP per platform, each containing a single-file binary plus `README.md` and `LICENSE`.
+
+- `wiz2obs_cli-<tag>_windows_x64.zip`
+- `wiz2obs_cli-<tag>_macos_x64.zip`
+- `wiz2obs_cli-<tag>_linux_x64.zip`
+
+Binary usage after download:
+
+- Windows: unzip `wiz2obs_cli-<tag>_windows_x64.zip`, then run `.\wiz2obs_cli.exe --help`
+- macOS: unzip `wiz2obs_cli-<tag>_macos_x64.zip`, then run `chmod +x ./wiz2obs_cli` and `./wiz2obs_cli --help`
+- Linux: unzip `wiz2obs_cli-<tag>_linux_x64.zip`, then run `chmod +x ./wiz2obs_cli` and `./wiz2obs_cli --help`
+
+Typical direct usage with the released binary:
+
+```powershell
+.\wiz2obs_cli.exe export --output D:\your\obsidian\WizSync --incremental --hydrate-missing
+```
 
 ## 🧩 Project Structure
 

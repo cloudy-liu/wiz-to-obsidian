@@ -308,6 +308,7 @@ def main(
         planning_started_at = time_fn()
         remote_versions = None
         remote_max_version = 0
+        remote_att_version = 0
         if args.hydrate_missing and sync_state_load_result.state.notes_by_doc_guid:
             hydration_client = build_hydration_client_fn(args)
             try:
@@ -319,6 +320,8 @@ def main(
                         try:
                             kb_info = remote_client.fetch_kb_info(kb_guid)
                             remote_kb_doc_version = kb_info.get("doc_version", 0)
+                            remote_kb_att_version = kb_info.get("att_version", 0)
+                            remote_att_version = max(remote_att_version, int(remote_kb_att_version or 0))
                             if remote_kb_doc_version > sync_state_load_result.state.doc_version:
                                 _write_progress(
                                     stderr,
@@ -341,6 +344,12 @@ def main(
                                     stderr,
                                     "remote_check",
                                     f"kb {kb_guid}: remote doc_version={remote_kb_doc_version} <= local={sync_state_load_result.state.doc_version}, no remote changes",
+                                )
+                            if remote_kb_att_version > sync_state_load_result.state.att_version:
+                                _write_progress(
+                                    stderr,
+                                    "remote_check",
+                                    f"kb {kb_guid}: remote att_version={remote_kb_att_version}, local={sync_state_load_result.state.att_version}, asset refresh enabled",
                                 )
                         except Exception as exc:
                             _write_progress(stderr, "remote_check", f"kb {kb_guid}: check failed: {exc}")
@@ -366,6 +375,7 @@ def main(
             metadata_inventory, args.output,
             sync_state=sync_state_load_result.state,
             remote_versions=remote_versions,
+            remote_att_version=remote_att_version,
         )
         if args.limit is not None and len(preplan.notes_to_export) > args.limit:
             limited_notes = preplan.notes_to_export[:args.limit]
@@ -386,6 +396,7 @@ def main(
             "planned_notes": len(preplan.notes_to_export),
             "skipped_notes": len(preplan.skipped_doc_guids),
             "stale_paths_to_remove": len(preplan.stale_paths_to_remove),
+            "deleted_notes": len(preplan.deleted_doc_guids),
         }
         _write_progress(
             stderr,
@@ -393,7 +404,8 @@ def main(
             (
                 f"planned {len(preplan.notes_to_export)} notes, "
                 f"skipped {len(preplan.skipped_doc_guids)}, "
-                f"stale_paths {len(preplan.stale_paths_to_remove)}"
+                f"stale_paths {len(preplan.stale_paths_to_remove)}, "
+                f"deleted {len(preplan.deleted_doc_guids)}"
             ),
         )
         stage_timings["planning"] = planning_duration
@@ -498,6 +510,7 @@ def main(
             sync_state=sync_state_load_result.state,
             hydration_repair_status=hydration_repair_status,
             doc_version=remote_max_version,
+            att_version=remote_att_version,
         )
         sync_duration = _format_duration(time_fn() - sync_started_at)
         _write_progress(stderr, "sync", f"done in {sync_duration}")

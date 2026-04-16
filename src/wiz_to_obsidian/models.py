@@ -80,6 +80,13 @@ class AttachmentRecord:
 
 
 @dataclass(frozen=True)
+class SyncAttachmentInfo:
+    att_guid: str
+    name: str
+    size: int = 0
+
+
+@dataclass(frozen=True)
 class WizNote:
     kb_name: str
     kb_guid: str
@@ -137,6 +144,9 @@ class SyncStateNote:
     updated: str | None = None
     needs_repair: bool = False
     remote_version: int | None = None
+    attachments: tuple[SyncAttachmentInfo, ...] = ()
+    resource_relative_paths: tuple[Path, ...] = ()
+    attachment_relative_paths: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -145,6 +155,7 @@ class SyncState:
     version: int = 1
     generated_at: str | None = None
     doc_version: int = 0
+    att_version: int = 0
 
 
 @dataclass(frozen=True)

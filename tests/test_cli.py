@@ -725,6 +725,116 @@ class CliTests(unittest.TestCase):
         self.assertEqual("test-user", captured["wiz_user_id"])
         self.assertEqual("test-pass", captured["wiz_password"])
 
+    def test_incremental_export_uses_remote_attachment_version_to_refresh_asset_notes(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+
+        metadata_inventory = models.Inventory(
+            notes=(
+                models.WizNote(
+                    kb_name="Main KB",
+                    kb_guid="kb-1",
+                    doc_guid="doc-1",
+                    title="Roadmap",
+                    folder_parts=("Inbox",),
+                    updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+                ),
+            )
+        )
+        captured: dict[str, object] = {}
+
+        class FakeSyncResult:
+            def __init__(self, output_dir: Path) -> None:
+                self.output_dir = output_dir
+                self.report_path = output_dir / "_wiz" / "report.json"
+                self.report = {
+                    "summary": {
+                        "total_notes": 1,
+                        "exported_notes": 1,
+                        "skipped_notes": 0,
+                        "new_notes": 0,
+                        "updated_notes": 0,
+                        "moved_notes": 0,
+                        "deleted_notes": 0,
+                        "attachments_changed_notes": 0,
+                        "asset_version_notes": 1,
+                        "removed_old_paths": 0,
+                        "removed_resources": 0,
+                        "removed_attachments": 0,
+                        "exported_resources": 0,
+                        "exported_attachments": 0,
+                    }
+                }
+
+        class DummyClient:
+            def close(self) -> None:
+                return None
+
+        class FakeRemoteClient:
+            def fetch_kb_info(self, kb_guid: str) -> dict[str, int]:
+                return {"doc_version": 0, "att_version": 2, "note_count": 1}
+
+        def fake_incremental_sync(*, inventory, output_dir, limit=None, progress=None, plan=None, sync_state=None, hydration_repair_status=None, doc_version=0, att_version=0):
+            captured["plan"] = plan
+            captured["att_version"] = att_version
+            return FakeSyncResult(Path(output_dir))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_dir = Path(temp_dir) / "_wiz"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "doc_version": 0,
+                        "att_version": 1,
+                        "notes": {
+                            "doc-1": {
+                                "relative_path": "Inbox/Roadmap.md",
+                                "updated": "2026-04-04T10:00:00+00:00",
+                                "needs_repair": False,
+                                "resource_relative_paths": ["_wiz/resources/doc-1/cover.png"],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(cli, "_extract_remote_client", return_value=FakeRemoteClient()):
+                exit_code = cli.main(
+                    ["export", "--output", temp_dir, "--incremental", "--hydrate-missing"],
+                    stdout=io.StringIO(),
+                    scan_inventory_metadata_fn=lambda leveldb_dir, blob_dir: metadata_inventory,
+                    load_note_payloads_fn=lambda **kwargs: models.Inventory(
+                        notes=tuple(
+                            note for note in kwargs["metadata_inventory"].notes if note.doc_guid in kwargs["doc_guids"]
+                        )
+                    ),
+                    build_hydration_client_fn=lambda args: DummyClient(),
+                    hydrate_inventory_fn=lambda **kwargs: type(
+                        "HydrationResult",
+                        (),
+                        {
+                            "inventory": kwargs["inventory"],
+                            "summary": {
+                                "hydrated_notes": 0,
+                                "hydrated_resources": 0,
+                                "hydrated_attachments": 0,
+                                "hydration_failures": 0,
+                            },
+                            "note_repair_status": {},
+                        },
+                    )(),
+                    incremental_sync_inventory_fn=fake_incremental_sync,
+                )
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual(2, captured["att_version"])
+        plan = captured["plan"]
+        self.assertEqual(("doc-1",), tuple(note.doc_guid for note in plan.notes_to_export))
+        self.assertEqual("asset_version", plan.reasons_by_doc_guid["doc-1"])
+
 
 if __name__ == "__main__":
     unittest.main()

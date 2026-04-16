@@ -16,7 +16,7 @@ from .markdown_export import (
     render_frontmatter,
     render_note_markdown,
 )
-from .models import Inventory, SyncState, SyncStateNote, WizNote
+from .models import Inventory, SyncAttachmentInfo, SyncState, SyncStateNote, WizNote
 from .reporting import build_export_report
 
 
@@ -223,6 +223,22 @@ def _append_attachment_section(markdown: str, attachment_lines: list[str]) -> st
     return f"{markdown.rstrip()}\n\n## Attachments\n" + "\n".join(attachment_lines) + "\n"
 
 
+def _sync_attachment_infos(note: WizNote) -> tuple[SyncAttachmentInfo, ...]:
+    return tuple(
+        sorted(
+            (
+                SyncAttachmentInfo(
+                    att_guid=attachment.att_guid,
+                    name=attachment.name,
+                    size=attachment.size,
+                )
+                for attachment in note.attachments
+            ),
+            key=lambda item: (item.name, item.att_guid, item.size),
+        )
+    )
+
+
 def _parse_frontmatter_fields(text: str) -> dict[str, str]:
     match = FRONTMATTER_BLOCK.match(text)
     if not match:
@@ -415,6 +431,8 @@ def export_inventory(
         alias_lookup = dict(_iter_note_asset_aliases(note, inventory))
         referenced_keys = _discover_note_references(note, alias_lookup)
         resource_paths: dict[str, Path] = {}
+        note_exported_resource_paths: set[Path] = set()
+        note_exported_attachment_paths: set[Path] = set()
         note_missing_resources: set[str] = set()
         needs_plain_name_alias = bool(
             note.body.has_meaningful_content and note.body.html and not note.body.markdown
@@ -459,11 +477,13 @@ def export_inventory(
                 if needs_plain_name_alias and referenced_key == bare_asset_name:
                     resource_paths[bare_asset_name] = relative_asset_path
                 exported_resources.add(asset_path)
+                note_exported_resource_paths.add(asset_path.relative_to(output_dir))
             else:
                 resource_paths[f"wiz-attachment://{bare_asset_name}"] = relative_asset_path
                 if needs_plain_name_alias and referenced_key == bare_asset_name:
                     resource_paths[bare_asset_name] = relative_asset_path
                 exported_attachments.add(asset_path)
+                note_exported_attachment_paths.add(asset_path.relative_to(output_dir))
 
         attachment_lines: list[str] = []
         missing_attachment_bytes = False
@@ -487,6 +507,7 @@ def export_inventory(
             _write_binary(attachment_path, payload)
             relative_attachment_path = _relative_link(note_path.parent, attachment_path)
             exported_attachments.add(attachment_path)
+            note_exported_attachment_paths.add(attachment_path.relative_to(output_dir))
             attachment_lines.append(f"- [{attachment.name}]({_to_posix(relative_attachment_path)})")
             resource_paths.setdefault(resolved_attachment_key, relative_attachment_path)
             for candidate_key in _attachment_candidate_keys(note, attachment):
@@ -530,6 +551,9 @@ def export_inventory(
                 or bool(note_missing_resources)
                 or missing_attachment_bytes
             ),
+            attachments=_sync_attachment_infos(note),
+            resource_relative_paths=tuple(sorted(note_exported_resource_paths, key=_to_posix)),
+            attachment_relative_paths=tuple(sorted(note_exported_attachment_paths, key=_to_posix)),
         )
 
         if note.body.has_meaningful_content:

@@ -1,34 +1,34 @@
-# 📒 Wiz To Obsidian
+# Wiz To Obsidian
 
 [English README](README.en.md)
 
 把本地 WizNote 笔记迁移到 Obsidian，尽量保留目录结构、正文、图片、附件和基础元数据，并支持后续一键增量同步。
 
-## ✨ 功能概览
+## 功能概览
 
-- 扫描本地 Wiz IndexedDB，构建完整笔记清单
-- 兼容普通 HTML 笔记和协作文档
-- 自动补全本地缺失的正文、图片、附件
+- 扫描本地 Wiz IndexedDB 数据并构建笔记清单
+- 兼容普通 HTML 笔记与协作文档
+- 从本地缓存或 Wiz 远端补全缺失的正文、图片和附件
 - 导出为 Obsidian 可直接打开的 Markdown
-- 图片写入 `_wiz/resources/`
+- 图片和嵌入资源写入 `_wiz/resources/`
 - 附件写入 `_wiz/attachments/`
-- 支持一键日常增量同步
+- 支持一键增量同步
 
-## 📌 项目状态
+## 当前状态
 
 - 当前主要面向 Windows + WizNote Desktop 本地数据目录
-- 同步方向是单向：`Wiz -> Obsidian`
-- 单元测试默认可在陌生机器上独立运行，不要求本机真的有 Wiz 数据
-- 当前仓库许可证为 `MIT`
+- 同步方向为单向：`Wiz -> Obsidian`
+- 单元测试可在干净环境独立运行，不依赖真实 Wiz 数据
+- 仓库采用 `MIT` 许可证
 
-## 🧰 环境要求
+## 环境要求
 
 - Python 3.10+
 - Windows
-- 可访问 `git`，因为 `requirements.txt` 中包含 Git 依赖
-- 如需 hydration 补全，准备好 Wiz 认证信息或本地 Wiz 缓存
+- `git` 在 `PATH` 中可用，因为 `requirements.txt` 包含 Git 依赖
+- 如需 hydration 补全，需要 Wiz 凭证或本地 Wiz 缓存
 
-## 🚀 最简单使用方式
+## 快速开始
 
 ### 1. 安装依赖
 
@@ -38,7 +38,7 @@ python -m pip install -r requirements.txt
 
 ### 2. 准备 `.env`
 
-推荐在仓库根目录放一个 `.env`，至少提供一套 Wiz 认证信息，用于补全本地缓存里没有的正文、图片和附件。
+建议在仓库根目录放置 `.env`，至少提供一组 Wiz 凭证，用于补全本地缓存里缺失的正文、图片和附件。
 
 先复制模板：
 
@@ -57,7 +57,7 @@ WIZ_SERVER_URL=https://as.wiz.cn
 WIZ_KS_URL=https://ks.wiz.cn
 ```
 
-如需固定常用路径，也可以放进 `.env`：
+可选路径覆盖：
 
 ```env
 WIZ_TO_OBSIDIAN_OUTPUT_DIR=D:\your\obsidian\WizSync
@@ -66,82 +66,58 @@ WIZ_BLOB_DIR=%APPDATA%\WizNote\IndexedDB\http_wiznote-desktop_0.indexeddb.blob
 WIZ_CACHE_DIR=%APPDATA%\WizNote\Cache
 ```
 
-这些变量分别表示：
-
-- `WIZ_TO_OBSIDIAN_OUTPUT_DIR`：导出到 Obsidian 的目标目录
-- `WIZ_LEVELDB_DIR`：Wiz 本地 IndexedDB leveldb 目录
-- `WIZ_BLOB_DIR`：Wiz 本地 IndexedDB blob 目录
-- `WIZ_CACHE_DIR`：Wiz Chromium cache 目录，用于补全正文、图片和附件
-
-### 3. 一键同步到 Obsidian
+### 3. 同步到 Obsidian
 
 ```powershell
 python .\scripts\sync_wiz_to_obsidian.py --output D:\your\obsidian\WizSync
 ```
 
-这里的 `--output` 应该传什么：
-
-- 传一个 Obsidian 可见的目录
-- 可以直接传整个独立 vault 目录
-- 也可以传现有 vault 里的一个子目录
-- 目录不存在时会自动创建
-
-如果已经在 `.env` 中设置了 `WIZ_TO_OBSIDIAN_OUTPUT_DIR`，也可以直接运行：
+如果 `.env` 中已经设置了 `WIZ_TO_OBSIDIAN_OUTPUT_DIR`，也可以直接运行：
 
 ```powershell
 python .\scripts\sync_wiz_to_obsidian.py
 ```
 
-脚本默认行为：
+默认行为：
 
 - 执行增量同步
-- 自动做 hydration 补全
-- 如未传 `--output`，则读取 `WIZ_TO_OBSIDIAN_OUTPUT_DIR`
+- 自动开启 hydration
+- 未传 `--output` 时读取 `WIZ_TO_OBSIDIAN_OUTPUT_DIR`
 
-### 4. 全量重跑
+### 4. 强制全量导出
 
 ```powershell
 python .\scripts\sync_wiz_to_obsidian.py --output D:\your\obsidian\WizSync --full
 ```
 
-### 5. 先看计划，不实际写文件
+### 5. 仅预览，不实际写入
 
 ```powershell
 python .\scripts\sync_wiz_to_obsidian.py --output D:\your\obsidian\WizSync --dry-run
 ```
 
-## 📂 导出结果
-
-输出目录由你通过 `--output` 或 `WIZ_TO_OBSIDIAN_OUTPUT_DIR` 指定，例如：
-
-```text
-D:\your\obsidian\WizSync
-```
-
-典型结构：
+## 输出结构
 
 ```text
 <your-output-dir>/
-├─ Folder A/
-├─ Folder B/
-└─ _wiz/
-   ├─ resources/
-   ├─ attachments/
-   ├─ report.json
-   ├─ content_audit.json
-   └─ content_audit.md
+├── Folder A/
+├── Folder B/
+└── _wiz/
+   ├── resources/
+   ├── attachments/
+   ├── report.json
+   ├── content_audit.json
+   └── content_audit.md
 ```
 
-说明：
+- Markdown 按 Wiz 分类路径导出
+- 图片和嵌入资源写入 `_wiz/resources/<doc_guid>/`
+- 附件写入 `_wiz/attachments/<doc_guid>/`
+- 正文中的资源链接会改写为 Obsidian 可直接打开的相对路径
 
-- 正文 Markdown 按 Wiz 分类路径导出
-- 图片、内嵌资源放 `_wiz/resources/<doc_guid>/`
-- 附件放 `_wiz/attachments/<doc_guid>/`
-- 正文里的链接会被改写为相对路径，Obsidian 可直接显示
+## 日常同步
 
-## 🔄 日常同步
-
-WizNote 有新内容后，重新执行同一条命令即可：
+WizNote 有新内容后，重复执行同一条命令即可：
 
 ```powershell
 python .\scripts\sync_wiz_to_obsidian.py --output D:\your\obsidian\WizSync
@@ -151,35 +127,59 @@ python .\scripts\sync_wiz_to_obsidian.py --output D:\your\obsidian\WizSync
 
 - 新增笔记
 - 正文更新时间变化的笔记
+- 附件元数据变化的笔记，即使正文更新时间未变
 - 标题或分类变化导致路径变化的笔记
+- 上一次导出不完整、被标记为 `needs_repair` 的笔记
+- Wiz 远端 `att_version` 前进后，已导出过资源或附件的笔记资产刷新
 
-当前不会自动删除：
+当前增量同步也会自动清理：
 
-- 已经从 Wiz 中删除、但导出目录仍残留的旧文件
+- 已从 Wiz 删除的笔记
+- 对应 `_wiz/resources/<doc_guid>/` 下的旧资源
+- 对应 `_wiz/attachments/<doc_guid>/` 下的旧附件
+- 笔记仍存在但已不再需要的孤立资源和孤立附件
 
-## 🛣️ 路径参数说明
+## Release 产物
 
-- `--output`：目标导出目录。传 Obsidian vault 本身，或 vault 内部的某个子目录。
-- `--leveldb-dir`：Wiz 本地 leveldb 目录。通常是 `%APPDATA%\WizNote\IndexedDB\http_wiznote-desktop_0.indexeddb.leveldb`。
-- `--blob-dir`：Wiz 本地 blob 目录。通常是 `%APPDATA%\WizNote\IndexedDB\http_wiznote-desktop_0.indexeddb.blob`。
-- `--cache-dir`：Wiz Chromium cache 目录。通常是 `%APPDATA%\WizNote\Cache`，主要在 hydration 阶段使用。
+GitHub tag release 会按平台发布 x64 ZIP 包，每个平台一个产物，包内包含单文件可执行程序、`README.md` 和 `LICENSE`：
 
-如果你的 WizNote 使用标准 Windows 安装路径，这三个 Wiz 源目录参数通常可以不传；只有当数据目录被迁走、做了便携化，或者当前机器路径和默认不一致时，才需要显式覆盖。
+- `wiz2obs_cli-<tag>_windows_x64.zip`
+- `wiz2obs_cli-<tag>_macos_x64.zip`
+- `wiz2obs_cli-<tag>_linux_x64.zip`
 
-## 🧩 项目结构
+下载后的 bin 用法：
 
-- `src/wiz_to_obsidian/`：核心库代码，负责扫描、渲染、补全、导出、增量同步
+- Windows：解压 `wiz2obs_cli-<tag>_windows_x64.zip`，执行 `.\wiz2obs_cli.exe --help`
+- macOS：解压 `wiz2obs_cli-<tag>_macos_x64.zip`，执行 `chmod +x ./wiz2obs_cli` 后再运行 `./wiz2obs_cli --help`
+- Linux：解压 `wiz2obs_cli-<tag>_linux_x64.zip`，执行 `chmod +x ./wiz2obs_cli` 后再运行 `./wiz2obs_cli --help`
+
+典型的直接运行方式：
+
+```powershell
+.\wiz2obs_cli.exe export --output D:\your\obsidian\WizSync --incremental --hydrate-missing
+```
+
+## 路径参数说明
+
+- `--output`：目标导出目录，可以传 Obsidian vault 本身，也可以传 vault 内部子目录
+- `--leveldb-dir`：Wiz 本地 leveldb 目录，通常为 `%APPDATA%\WizNote\IndexedDB\http_wiznote-desktop_0.indexeddb.leveldb`
+- `--blob-dir`：Wiz 本地 blob 目录，通常为 `%APPDATA%\WizNote\IndexedDB\http_wiznote-desktop_0.indexeddb.blob`
+- `--cache-dir`：Wiz Chromium cache 目录，通常为 `%APPDATA%\WizNote\Cache`，主要用于 hydration
+
+如果 WizNote 使用标准 Windows 安装路径，这三个源目录参数通常无需显式传入；只有在数据目录被迁移、便携化，或当前机器路径与默认值不一致时才需要覆盖。
+
+## 项目结构
+
+- `src/wiz_to_obsidian/`：核心库代码，负责扫描、渲染、补全、导出和增量同步
 - `scripts/`：用户直接执行的 Python 入口脚本
-- `tests/`：覆盖扫描、渲染、导出、同步的单元测试
+- `tests/`：覆盖扫描、渲染、导出与同步行为的单元测试
 
-## 🧪 运行测试
-
-clone 后装好依赖即可运行：
+## 运行测试
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-## 📄 License
+## License
 
 本项目基于 `MIT License` 发布，详见 [LICENSE](LICENSE)。

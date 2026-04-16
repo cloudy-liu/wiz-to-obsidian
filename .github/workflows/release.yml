@@ -11,14 +11,21 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - os: windows-2022
             platform: windows
-          - os: macos-latest
+            arch: x64
+            binary_name: wiz2obs_cli.exe
+          - os: macos-13
             platform: macos
-          - os: ubuntu-latest
+            arch: x64
+            binary_name: wiz2obs_cli
+          - os: ubuntu-22.04
             platform: linux
+            arch: x64
+            binary_name: wiz2obs_cli
 
     runs-on: ${{ matrix.os }}
 
@@ -42,42 +49,44 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller --onefile --name wiz-to-obsidian src/wiz_to_obsidian/__main__.py
+          pyinstaller --onefile --name wiz2obs_cli src/wiz_to_obsidian/__main__.py
 
       - name: Set archive name
         id: archive
         shell: bash
-        run: echo "name=wiz-to-obsidian-${GITHUB_REF_NAME}-${{ matrix.platform }}.zip" >> "$GITHUB_OUTPUT"
+        run: echo "name=wiz2obs_cli-${GITHUB_REF_NAME}_${{ matrix.platform }}_${{ matrix.arch }}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Package artifact (Windows)
         if: ${{ matrix.platform == 'windows' }}
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force staging
-          Copy-Item dist\wiz-to-obsidian.exe staging\
-          Copy-Item README.md staging\
-          Copy-Item LICENSE staging\
-          Compress-Archive -Path staging\* -DestinationPath ${{ steps.archive.outputs.name }}
+          New-Item -ItemType Directory -Force package | Out-Null
+          New-Item -ItemType Directory -Force release-artifacts | Out-Null
+          Copy-Item "dist\${{ matrix.binary_name }}" package\
+          Copy-Item README.md package\
+          Copy-Item LICENSE package\
+          Compress-Archive -Path package\* -DestinationPath "release-artifacts\${{ steps.archive.outputs.name }}"
 
       - name: Package artifact (macOS / Linux)
         if: ${{ matrix.platform != 'windows' }}
         run: |
-          mkdir -p staging
-          cp dist/wiz-to-obsidian staging/
-          cp README.md staging/
-          cp LICENSE staging/
-          cd staging
-          zip ../${{ steps.archive.outputs.name }} *
+          mkdir -p package release-artifacts
+          cp "dist/${{ matrix.binary_name }}" package/
+          cp README.md package/
+          cp LICENSE package/
+          cd package
+          zip -r "../release-artifacts/${{ steps.archive.outputs.name }}" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wiz-to-obsidian-${{ matrix.platform }}
-          path: ${{ steps.archive.outputs.name }}
+          name: ${{ steps.archive.outputs.name }}
+          path: release-artifacts/${{ steps.archive.outputs.name }}
+          if-no-files-found: error
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Download all artifacts
@@ -88,5 +97,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.zip
+          files: artifacts/*/*.zip
           generate_release_notes: true

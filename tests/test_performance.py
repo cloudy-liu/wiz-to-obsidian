@@ -522,6 +522,19 @@ class FunctionalEquivalenceTests(unittest.TestCase):
                     relative_path=Path("Folder/Note 1.md"),
                     updated="2026-01-01T00:00:00+00:00",
                     needs_repair=False,
+                    attachments=(
+                        models.SyncAttachmentInfo(
+                            att_guid="att-1",
+                            name="report.pdf",
+                            size=128,
+                        ),
+                    ),
+                    resource_relative_paths=(
+                        Path("_wiz/resources/doc-1/cover.png"),
+                    ),
+                    attachment_relative_paths=(
+                        Path("_wiz/attachments/doc-1/report.pdf"),
+                    ),
                 ),
                 "doc-2": models.SyncStateNote(
                     doc_guid="doc-2",
@@ -529,7 +542,8 @@ class FunctionalEquivalenceTests(unittest.TestCase):
                     updated=None,
                     needs_repair=True,
                 ),
-            }
+            },
+            att_version=9,
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -543,6 +557,11 @@ class FunctionalEquivalenceTests(unittest.TestCase):
             self.assertEqual(Path("Folder/Note 1.md"), entry1.relative_path)
             self.assertEqual("2026-01-01T00:00:00+00:00", entry1.updated)
             self.assertFalse(entry1.needs_repair)
+            self.assertEqual(9, loaded.att_version)
+            self.assertEqual(("report.pdf",), tuple(item.name for item in entry1.attachments))
+            self.assertEqual((128,), tuple(item.size for item in entry1.attachments))
+            self.assertEqual((Path("_wiz/resources/doc-1/cover.png"),), entry1.resource_relative_paths)
+            self.assertEqual((Path("_wiz/attachments/doc-1/report.pdf"),), entry1.attachment_relative_paths)
             entry2 = loaded.notes_by_doc_guid["doc-2"]
             self.assertIsNone(entry2.updated)
             self.assertTrue(entry2.needs_repair)

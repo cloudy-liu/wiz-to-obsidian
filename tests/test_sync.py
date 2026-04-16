@@ -23,6 +23,96 @@ def import_or_fail(testcase: unittest.TestCase, module_name: str):
 
 
 class SyncTests(unittest.TestCase):
+    def test_plan_incremental_sync_detects_attachment_metadata_changes_without_body_timestamp_change(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        sync = import_or_fail(self, "wiz_to_obsidian.sync")
+
+        note = models.WizNote(
+            kb_name="KB",
+            kb_guid="kb-1",
+            doc_guid="doc-attachment",
+            title="Attachment Changed",
+            folder_parts=("Inbox",),
+            updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+            body=models.NoteBody(markdown="# Attachment Changed"),
+            attachments=(
+                models.AttachmentRecord(
+                    att_guid="att-1",
+                    doc_guid="doc-attachment",
+                    name="spec.pdf",
+                    size=20,
+                ),
+            ),
+        )
+        inventory = models.Inventory(notes=(note,))
+        state = models.SyncState(
+            notes_by_doc_guid={
+                "doc-attachment": models.SyncStateNote(
+                    doc_guid="doc-attachment",
+                    relative_path=Path("Inbox") / "Attachment Changed.md",
+                    updated="2026-04-04T10:00:00+00:00",
+                    needs_repair=False,
+                    attachments=(
+                        models.SyncAttachmentInfo(
+                            att_guid="att-1",
+                            name="spec.pdf",
+                            size=10,
+                        ),
+                    ),
+                )
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.object(sync, "load_or_rebuild_sync_state", side_effect=AssertionError("not expected")):
+                plan = sync.plan_incremental_sync(inventory, Path(temp_dir), sync_state=state)
+
+        self.assertEqual(("doc-attachment",), tuple(note.doc_guid for note in plan.notes_to_export))
+        self.assertEqual("attachments_changed", plan.reasons_by_doc_guid["doc-attachment"])
+        self.assertEqual((), plan.skipped_doc_guids)
+
+    def test_plan_incremental_sync_detects_asset_version_bump_for_exported_asset_notes(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        sync = import_or_fail(self, "wiz_to_obsidian.sync")
+
+        note = models.WizNote(
+            kb_name="KB",
+            kb_guid="kb-1",
+            doc_guid="doc-assets",
+            title="Assets",
+            folder_parts=("Inbox",),
+            updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+            body=models.NoteBody(markdown="# Assets"),
+        )
+        inventory = models.Inventory(notes=(note,))
+        state = models.SyncState(
+            notes_by_doc_guid={
+                "doc-assets": models.SyncStateNote(
+                    doc_guid="doc-assets",
+                    relative_path=Path("Inbox") / "Assets.md",
+                    updated="2026-04-04T10:00:00+00:00",
+                    needs_repair=False,
+                    resource_relative_paths=(
+                        Path("_wiz") / "resources" / "doc-assets" / "cover.png",
+                    ),
+                )
+            },
+            att_version=3,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.object(sync, "load_or_rebuild_sync_state", side_effect=AssertionError("not expected")):
+                plan = sync.plan_incremental_sync(
+                    inventory,
+                    Path(temp_dir),
+                    sync_state=state,
+                    remote_att_version=5,
+                )
+
+        self.assertEqual(("doc-assets",), tuple(note.doc_guid for note in plan.notes_to_export))
+        self.assertEqual("asset_version", plan.reasons_by_doc_guid["doc-assets"])
+        self.assertEqual((), plan.skipped_doc_guids)
+
     def test_plan_incremental_sync_uses_state_and_repair_flags(self) -> None:
         models = import_or_fail(self, "wiz_to_obsidian.models")
         sync = import_or_fail(self, "wiz_to_obsidian.sync")
@@ -557,6 +647,111 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(1, result.report["summary"]["exported_notes"])
             # The other should be in skipped
             self.assertIn("doc-a", {n.doc_guid for n in result.sync_state.notes_by_doc_guid.values()} if hasattr(result.sync_state.notes_by_doc_guid, 'values') else [])
+
+    def test_incremental_sync_inventory_removes_deleted_notes_and_asset_dirs(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        sync = import_or_fail(self, "wiz_to_obsidian.sync")
+
+        state = models.SyncState(
+            notes_by_doc_guid={
+                "doc-deleted": models.SyncStateNote(
+                    doc_guid="doc-deleted",
+                    relative_path=Path("Inbox") / "Gone.md",
+                    updated="2026-04-04T10:00:00+00:00",
+                    needs_repair=False,
+                    resource_relative_paths=(
+                        Path("_wiz") / "resources" / "doc-deleted" / "cover.png",
+                    ),
+                    attachment_relative_paths=(
+                        Path("_wiz") / "attachments" / "doc-deleted" / "spec.pdf",
+                    ),
+                )
+            },
+            doc_version=11,
+            att_version=7,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            note_path = output_dir / "Inbox" / "Gone.md"
+            note_path.parent.mkdir(parents=True, exist_ok=True)
+            note_path.write_text("---\nwiz_doc_guid: doc-deleted\n---\n", encoding="utf-8")
+
+            resource_path = output_dir / "_wiz" / "resources" / "doc-deleted" / "cover.png"
+            resource_path.parent.mkdir(parents=True, exist_ok=True)
+            resource_path.write_bytes(b"img")
+
+            attachment_path = output_dir / "_wiz" / "attachments" / "doc-deleted" / "spec.pdf"
+            attachment_path.parent.mkdir(parents=True, exist_ok=True)
+            attachment_path.write_bytes(b"pdf")
+
+            result = sync.incremental_sync_inventory(
+                inventory=models.Inventory(notes=()),
+                output_dir=output_dir,
+                sync_state=state,
+            )
+
+            self.assertFalse(note_path.exists())
+            self.assertFalse(resource_path.exists())
+            self.assertFalse(attachment_path.exists())
+            self.assertNotIn("doc-deleted", result.sync_state.notes_by_doc_guid)
+            self.assertEqual(1, result.report["summary"]["deleted_notes"])
+            self.assertEqual(1, result.report["summary"]["removed_resources"])
+            self.assertEqual(1, result.report["summary"]["removed_attachments"])
+            self.assertEqual(11, result.sync_state.doc_version)
+            self.assertEqual(7, result.sync_state.att_version)
+
+    def test_incremental_sync_inventory_prunes_orphaned_attachments_after_attachment_removal(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        sync = import_or_fail(self, "wiz_to_obsidian.sync")
+
+        note = models.WizNote(
+            kb_name="KB",
+            kb_guid="kb-1",
+            doc_guid="doc-orphan",
+            title="Attachment Removed",
+            folder_parts=("Inbox",),
+            updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+            body=models.NoteBody(markdown="# Attachment Removed"),
+            attachments=(),
+        )
+        inventory = models.Inventory(notes=(note,))
+        state = models.SyncState(
+            notes_by_doc_guid={
+                "doc-orphan": models.SyncStateNote(
+                    doc_guid="doc-orphan",
+                    relative_path=Path("Inbox") / "Attachment Removed.md",
+                    updated="2026-04-04T10:00:00+00:00",
+                    needs_repair=False,
+                    attachments=(
+                        models.SyncAttachmentInfo(
+                            att_guid="att-1",
+                            name="spec.pdf",
+                            size=10,
+                        ),
+                    ),
+                    attachment_relative_paths=(
+                        Path("_wiz") / "attachments" / "doc-orphan" / "spec.pdf",
+                    ),
+                )
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            old_attachment = output_dir / "_wiz" / "attachments" / "doc-orphan" / "spec.pdf"
+            old_attachment.parent.mkdir(parents=True, exist_ok=True)
+            old_attachment.write_bytes(b"old")
+
+            result = sync.incremental_sync_inventory(
+                inventory=inventory,
+                output_dir=output_dir,
+                sync_state=state,
+            )
+
+            self.assertFalse(old_attachment.exists())
+            self.assertEqual(1, result.report["summary"]["attachments_changed_notes"])
+            self.assertEqual(1, result.report["summary"]["removed_attachments"])
 
 
 if __name__ == "__main__":

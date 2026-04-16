@@ -8,7 +8,7 @@ from typing import Callable, Mapping, Sequence
 
 from .exporter import ExportResult, export_inventory
 from .markdown_export import NotePathResolver
-from .models import Inventory, NoteForExport, SyncState, SyncStateNote, WizNote
+from .models import Inventory, NoteForExport, SyncAttachmentInfo, SyncState, SyncStateNote, WizNote
 
 
 FRONTMATTER_BLOCK = re.compile(r"\A---\s*\r?\n(?P<body>.*?)(?:\r?\n)---(?:\r?\n|\Z)", re.DOTALL)
@@ -29,6 +29,7 @@ class IncrementalSyncPlan:
     skipped_doc_guids: tuple[str, ...]
     stale_paths_to_remove: tuple[Path, ...]
     reasons_by_doc_guid: Mapping[str, str]
+    deleted_doc_guids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,30 @@ def _note_updated_string(note: WizNote) -> str | None:
     return note.updated_at.isoformat()
 
 
+def _sorted_paths(paths: Sequence[Path]) -> tuple[Path, ...]:
+    return tuple(sorted(paths, key=lambda path: path.as_posix()))
+
+
+def _attachment_snapshot(note: WizNote) -> tuple[SyncAttachmentInfo, ...]:
+    return tuple(
+        sorted(
+            (
+                SyncAttachmentInfo(
+                    att_guid=attachment.att_guid,
+                    name=attachment.name,
+                    size=attachment.size,
+                )
+                for attachment in note.attachments
+            ),
+            key=lambda item: (item.name, item.att_guid, item.size),
+        )
+    )
+
+
+def _entry_has_exported_assets(entry: SyncStateNote, note: WizNote) -> bool:
+    return bool(entry.resource_relative_paths or entry.attachment_relative_paths or entry.attachments or note.attachments)
+
+
 def sync_state_path(output_dir: Path) -> Path:
     return output_dir / "_wiz" / "state.json"
 
@@ -117,6 +142,19 @@ def _sync_state_payload(state: SyncState) -> dict[str, object]:
         }
         if entry.remote_version is not None:
             note_dict["remote_version"] = int(entry.remote_version)
+        if entry.attachments:
+            note_dict["attachments"] = [
+                {
+                    "att_guid": attachment.att_guid,
+                    "name": attachment.name,
+                    "size": int(attachment.size),
+                }
+                for attachment in entry.attachments
+            ]
+        if entry.resource_relative_paths:
+            note_dict["resource_relative_paths"] = [path.as_posix() for path in entry.resource_relative_paths]
+        if entry.attachment_relative_paths:
+            note_dict["attachment_relative_paths"] = [path.as_posix() for path in entry.attachment_relative_paths]
         notes_payload[doc_guid] = note_dict
     payload: dict[str, object] = {
         "version": int(state.version),
@@ -125,6 +163,8 @@ def _sync_state_payload(state: SyncState) -> dict[str, object]:
     }
     if state.doc_version:
         payload["doc_version"] = int(state.doc_version)
+    if state.att_version:
+        payload["att_version"] = int(state.att_version)
     return payload
 
 
@@ -141,21 +181,51 @@ def _load_sync_state_from_json(payload: Mapping[str, object]) -> SyncState | Non
         relative_path = str(raw_entry.get("relative_path") or "").strip()
         if not doc_guid or not relative_path:
             continue
+        raw_attachments = raw_entry.get("attachments")
+        attachments: list[SyncAttachmentInfo] = []
+        if isinstance(raw_attachments, Sequence) and not isinstance(raw_attachments, (str, bytes, bytearray)):
+            for raw_attachment in raw_attachments:
+                if not isinstance(raw_attachment, Mapping):
+                    continue
+                attachments.append(
+                    SyncAttachmentInfo(
+                        att_guid=str(raw_attachment.get("att_guid") or raw_attachment.get("attGuid") or "").strip(),
+                        name=str(raw_attachment.get("name") or "").strip(),
+                        size=int(raw_attachment.get("size") or 0),
+                    )
+                )
+        resource_relative_paths = raw_entry.get("resource_relative_paths")
+        attachment_relative_paths = raw_entry.get("attachment_relative_paths")
         notes_by_doc_guid[doc_guid] = SyncStateNote(
             doc_guid=doc_guid,
             relative_path=Path(relative_path),
             updated=str(raw_entry.get("updated") or "").strip() or None,
             needs_repair=bool(raw_entry.get("needs_repair")),
             remote_version=int(raw_entry["remote_version"]) if raw_entry.get("remote_version") is not None else None,
+            attachments=tuple(attachments),
+            resource_relative_paths=_sorted_paths(
+                tuple(
+                    Path(str(path))
+                    for path in resource_relative_paths
+                )
+            ) if isinstance(resource_relative_paths, Sequence) and not isinstance(resource_relative_paths, (str, bytes, bytearray)) else (),
+            attachment_relative_paths=_sorted_paths(
+                tuple(
+                    Path(str(path))
+                    for path in attachment_relative_paths
+                )
+            ) if isinstance(attachment_relative_paths, Sequence) and not isinstance(attachment_relative_paths, (str, bytes, bytearray)) else (),
         )
 
     doc_version = int(payload.get("doc_version") or 0)
+    att_version = int(payload.get("att_version") or 0)
 
     return SyncState(
         notes_by_doc_guid=notes_by_doc_guid,
         version=int(payload.get("version") or 1),
         generated_at=str(payload.get("generated_at") or "").strip() or None,
         doc_version=doc_version,
+        att_version=att_version,
     )
 
 
@@ -239,6 +309,7 @@ def plan_incremental_sync(
     *,
     sync_state: SyncState | None = None,
     remote_versions: Mapping[str, Mapping] | None = None,
+    remote_att_version: int | None = None,
 ) -> IncrementalSyncPlan:
     desired_paths = build_note_relative_paths(inventory.notes)
     if sync_state is None:
@@ -248,6 +319,10 @@ def plan_incremental_sync(
     skipped_doc_guids: list[str] = []
     stale_paths_to_remove: list[Path] = []
     reasons_by_doc_guid: dict[str, str] = {}
+    inventory_doc_guids = {note.doc_guid for note in inventory.notes}
+    asset_version_bumped = (
+        remote_att_version is not None and int(remote_att_version or 0) > int(sync_state.att_version or 0)
+    )
 
     for note in inventory.notes:
         desired_relative_path = desired_paths[note.doc_guid]
@@ -275,6 +350,11 @@ def plan_incremental_sync(
             notes_to_export.append(note)
             continue
 
+        if current.attachments != _attachment_snapshot(note):
+            reasons_by_doc_guid[note.doc_guid] = "attachments_changed"
+            notes_to_export.append(note)
+            continue
+
         if remote_versions is not None:
             remote_info = remote_versions.get(note.doc_guid)
             if remote_info is not None:
@@ -294,6 +374,11 @@ def plan_incremental_sync(
                         notes_to_export.append(note)
                         continue
 
+        if asset_version_bumped and _entry_has_exported_assets(current, note):
+            reasons_by_doc_guid[note.doc_guid] = "asset_version"
+            notes_to_export.append(note)
+            continue
+
         skipped_doc_guids.append(note.doc_guid)
 
     unique_stale_paths: list[Path] = []
@@ -303,12 +388,17 @@ def plan_incremental_sync(
             seen_paths.add(path)
             unique_stale_paths.append(path)
 
+    deleted_doc_guids = tuple(
+        sorted(doc_guid for doc_guid in sync_state.notes_by_doc_guid if doc_guid not in inventory_doc_guids)
+    )
+
     return IncrementalSyncPlan(
         notes_to_export=tuple(notes_to_export),
         note_relative_paths_by_doc_guid={doc_guid: desired_paths[doc_guid] for doc_guid in reasons_by_doc_guid},
         skipped_doc_guids=tuple(skipped_doc_guids),
         stale_paths_to_remove=tuple(unique_stale_paths),
         reasons_by_doc_guid=reasons_by_doc_guid,
+        deleted_doc_guids=deleted_doc_guids,
     )
 
 
@@ -322,6 +412,61 @@ def _remove_empty_parent_dirs(path: Path, *, root: Path) -> None:
         current = current.parent
 
 
+def _prune_asset_directory(
+    output_dir: Path,
+    *,
+    root: Path,
+    keep_relative_paths: Sequence[Path],
+    progress: Callable[[str], None] | None = None,
+) -> int:
+    if not root.exists():
+        return 0
+
+    keep_paths = {output_dir / path for path in keep_relative_paths}
+    removed_files = 0
+    for path in tuple(root.rglob("*")):
+        if not path.is_file() or path in keep_paths:
+            continue
+        if progress is not None:
+            progress(f"remove stale asset {(path.relative_to(output_dir)).as_posix()}")
+        path.unlink()
+        removed_files += 1
+
+    for directory in sorted((path for path in root.rglob("*") if path.is_dir()), reverse=True):
+        try:
+            directory.rmdir()
+        except OSError:
+            continue
+    try:
+        root.rmdir()
+    except OSError:
+        pass
+    return removed_files
+
+
+def _prune_note_assets(
+    output_dir: Path,
+    *,
+    doc_guid: str,
+    keep_resource_paths: Sequence[Path],
+    keep_attachment_paths: Sequence[Path],
+    progress: Callable[[str], None] | None = None,
+) -> tuple[int, int]:
+    removed_resources = _prune_asset_directory(
+        output_dir,
+        root=output_dir / "_wiz" / "resources" / doc_guid,
+        keep_relative_paths=keep_resource_paths,
+        progress=progress,
+    )
+    removed_attachments = _prune_asset_directory(
+        output_dir,
+        root=output_dir / "_wiz" / "attachments" / doc_guid,
+        keep_relative_paths=keep_attachment_paths,
+        progress=progress,
+    )
+    return removed_resources, removed_attachments
+
+
 def incremental_sync_inventory(
     *,
     inventory: Inventory,
@@ -332,6 +477,7 @@ def incremental_sync_inventory(
     sync_state: SyncState | None = None,
     hydration_repair_status: Mapping[str, bool] | None = None,
     doc_version: int = 0,
+    att_version: int = 0,
 ) -> IncrementalSyncResult:
     base_state = sync_state or load_or_rebuild_sync_state(output_dir).state
     if plan is None:
@@ -353,6 +499,7 @@ def incremental_sync_inventory(
                 skipped_doc_guids=plan.skipped_doc_guids + extra_skipped,
                 stale_paths_to_remove=plan.stale_paths_to_remove,
                 reasons_by_doc_guid={g: r for g, r in plan.reasons_by_doc_guid.items() if g in plan_guids},
+                deleted_doc_guids=plan.deleted_doc_guids,
             )
         scoped_inventory = Inventory(
             notes=tuple(plan.notes_to_export),
@@ -365,7 +512,8 @@ def incremental_sync_inventory(
             "plan: "
             f"export={len(plan.notes_to_export)}, "
             f"skip={len(plan.skipped_doc_guids)}, "
-            f"remove_old_paths={len(plan.stale_paths_to_remove)}"
+            f"remove_old_paths={len(plan.stale_paths_to_remove)}, "
+            f"deleted={len(plan.deleted_doc_guids)}"
         )
     changed_doc_guids = {note.doc_guid for note in plan.notes_to_export}
     changed_inventory = Inventory(
@@ -411,9 +559,50 @@ def incremental_sync_inventory(
         exported_resources = int(export_result.report["summary"]["exported_resources"])
         exported_attachments = int(export_result.report["summary"]["exported_attachments"])
 
+    removed_resources = 0
+    removed_attachments = 0
+    changed_entries = export_result.sync_state.notes_by_doc_guid if export_result is not None and export_result.sync_state is not None else {}
+    for doc_guid in changed_doc_guids:
+        entry = changed_entries.get(doc_guid)
+        if entry is None:
+            continue
+        pruned_resources, pruned_attachments = _prune_note_assets(
+            output_dir,
+            doc_guid=doc_guid,
+            keep_resource_paths=entry.resource_relative_paths,
+            keep_attachment_paths=entry.attachment_relative_paths,
+            progress=progress,
+        )
+        removed_resources += pruned_resources
+        removed_attachments += pruned_attachments
+
+    deleted_note_paths = 0
+    for doc_guid in plan.deleted_doc_guids:
+        existing = base_state.notes_by_doc_guid.get(doc_guid)
+        if existing is None:
+            continue
+        note_path = output_dir / existing.relative_path
+        if note_path.exists():
+            if progress is not None:
+                progress(f"remove deleted note {existing.relative_path.as_posix()}")
+            note_path.unlink()
+            _remove_empty_parent_dirs(note_path, root=output_dir)
+            deleted_note_paths += 1
+        pruned_resources, pruned_attachments = _prune_note_assets(
+            output_dir,
+            doc_guid=doc_guid,
+            keep_resource_paths=(),
+            keep_attachment_paths=(),
+            progress=progress,
+        )
+        removed_resources += pruned_resources
+        removed_attachments += pruned_attachments
+
     updated_state_notes_by_doc_guid = dict(base_state.notes_by_doc_guid)
     if export_result is not None and export_result.sync_state is not None:
         updated_state_notes_by_doc_guid.update(export_result.sync_state.notes_by_doc_guid)
+    for doc_guid in plan.deleted_doc_guids:
+        updated_state_notes_by_doc_guid.pop(doc_guid, None)
     # Apply hydration repair status to override exporter's needs_repair if available
     if hydration_repair_status is not None:
         for doc_guid, needs_repair in hydration_repair_status.items():
@@ -424,22 +613,41 @@ def incremental_sync_inventory(
                     relative_path=existing.relative_path,
                     updated=existing.updated,
                     needs_repair=needs_repair,
+                    remote_version=existing.remote_version,
+                    attachments=existing.attachments,
+                    resource_relative_paths=existing.resource_relative_paths,
+                    attachment_relative_paths=existing.attachment_relative_paths,
                 )
     effective_doc_version = max(int(base_state.doc_version or 0), int(doc_version or 0))
-    updated_state = SyncState(notes_by_doc_guid=updated_state_notes_by_doc_guid, doc_version=effective_doc_version)
+    effective_att_version = max(int(base_state.att_version or 0), int(att_version or 0))
+    updated_state = SyncState(
+        notes_by_doc_guid=updated_state_notes_by_doc_guid,
+        doc_version=effective_doc_version,
+        att_version=effective_att_version,
+    )
     write_sync_state(output_dir, updated_state)
 
     report = {
         "summary": {
-            "total_notes": len(plan.notes_to_export) + len(plan.skipped_doc_guids),
+            "total_notes": len(plan.notes_to_export) + len(plan.skipped_doc_guids) + len(plan.deleted_doc_guids),
             "exported_notes": len(plan.notes_to_export),
             "skipped_notes": len(plan.skipped_doc_guids),
             "new_notes": new_notes,
             "updated_notes": updated_notes,
             "moved_notes": moved_notes,
             "repair_notes": repair_notes,
+            "attachments_changed_notes": sum(
+                1 for reason in plan.reasons_by_doc_guid.values() if reason == "attachments_changed"
+            ),
             "remote_updated_notes": remote_updated_notes,
+            "asset_version_notes": sum(
+                1 for reason in plan.reasons_by_doc_guid.values() if reason == "asset_version"
+            ),
+            "deleted_notes": len(plan.deleted_doc_guids),
             "removed_old_paths": len(plan.stale_paths_to_remove),
+            "removed_note_paths": deleted_note_paths,
+            "removed_resources": removed_resources,
+            "removed_attachments": removed_attachments,
             "exported_resources": exported_resources,
             "exported_attachments": exported_attachments,
         }
