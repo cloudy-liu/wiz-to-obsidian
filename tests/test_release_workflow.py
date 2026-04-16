@@ -14,10 +14,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
         self.assertIn("windows-2022", text)
         self.assertIn("ubuntu-22.04", text)
-        self.assertIn("macos-latest", text)
+        self.assertIn("macos-15-intel", text)
         self.assertIn("arch: x64", text)
         self.assertIn("binary_name: wiz2obs_cli.exe", text)
         self.assertIn("binary_name: wiz2obs_cli", text)
+        self.assertIn("pip install pyinstaller pytest", text)
         self.assertIn("pyinstaller --onefile --name wiz2obs_cli", text)
         self.assertIn("wiz2obs_cli-${GITHUB_REF_NAME}_${{ matrix.platform }}_${{ matrix.arch }}.zip", text)
 

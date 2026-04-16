@@ -18,7 +18,7 @@ jobs:
             platform: windows
             arch: x64
             binary_name: wiz2obs_cli.exe
-          - os: macos-latest
+          - os: macos-15-intel
             platform: macos
             arch: x64
             binary_name: wiz2obs_cli
@@ -40,7 +40,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller
+          pip install pyinstaller pytest
           pip install -e .
 
       - name: Run tests
