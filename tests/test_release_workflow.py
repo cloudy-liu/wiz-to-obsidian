@@ -6,6 +6,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
+RELEASE_README_PATH = ROOT / "release" / "README.md"
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
@@ -21,7 +22,16 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("pip install pyinstaller pytest", text)
         self.assertIn("name: wiz2obs-cli-${{ github.ref_name }}", text)
         self.assertIn("pyinstaller --onefile --name wiz2obs_cli", text)
+        self.assertIn(".env.example", text)
+        self.assertIn("config.example.env", text)
+        self.assertIn("release/README.md", text)
         self.assertIn("wiz2obs_cli-${GITHUB_REF_NAME}_${{ matrix.platform }}_${{ matrix.arch }}.zip", text)
+
+    def test_release_readme_exists_for_packaged_zip(self) -> None:
+        text = RELEASE_README_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("wiz2obs_cli sync", text)
+        self.assertIn("config.example.env", text)
 
 
 if __name__ == "__main__":

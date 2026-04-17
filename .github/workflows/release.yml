@@ -63,7 +63,8 @@ jobs:
           New-Item -ItemType Directory -Force package | Out-Null
           New-Item -ItemType Directory -Force release-artifacts | Out-Null
           Copy-Item "dist\${{ matrix.binary_name }}" package\
-          Copy-Item README.md package\
+          Copy-Item ".env.example" "package\config.example.env"
+          Copy-Item "release\README.md" "package\README.md"
           Copy-Item LICENSE package\
           Compress-Archive -Path package\* -DestinationPath "release-artifacts\${{ steps.archive.outputs.name }}"
 
@@ -72,7 +73,8 @@ jobs:
         run: |
           mkdir -p package release-artifacts
           cp "dist/${{ matrix.binary_name }}" package/
-          cp README.md package/
+          cp .env.example package/config.example.env
+          cp release/README.md package/README.md
           cp LICENSE package/
           cd package
           zip -r "../release-artifacts/${{ steps.archive.outputs.name }}" .

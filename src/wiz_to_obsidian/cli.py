@@ -18,6 +18,8 @@ from .wiz_hydration import CompositeWizContentClient, HydrationResult, Hydration
 from .wiz_local import load_local_note_payloads, scan_local_wiz, scan_local_wiz_metadata, summarize_inventory
 from .wiz_remote import RemoteWizConfig, RemoteWizClient
 
+OUTPUT_ENV_VAR = "WIZ_TO_OBSIDIAN_OUTPUT_DIR"
+
 
 def _extract_remote_client(client: object) -> RemoteWizClient | None:
     if isinstance(client, RemoteWizClient):
@@ -87,7 +89,15 @@ def _split_dotenv_assignment(line: str) -> tuple[str, str] | None:
     return None
 
 
-def _load_dotenv(path: Path = Path(".env")) -> None:
+def _default_dotenv_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / ".env"
+    return Path.cwd() / ".env"
+
+
+def _load_dotenv(path: Path | None = None) -> None:
+    if path is None:
+        path = _default_dotenv_path()
     if not path.exists():
         return
 
@@ -112,28 +122,44 @@ def _load_dotenv(path: Path = Path(".env")) -> None:
         os.environ[key] = value
 
 
+def _add_wiz_source_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--leveldb-dir", type=Path, default=default_leveldb_dir())
+    parser.add_argument("--blob-dir", type=Path, default=default_blob_dir())
+
+
+def _add_hydration_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--cache-dir", type=Path, default=default_cache_dir())
+    parser.add_argument("--wiz-user-id", default=os.environ.get("WIZ_USER_ID"))
+    parser.add_argument("--wiz-password", default=os.environ.get("WIZ_PASSWORD"))
+    parser.add_argument("--wiz-token", default=os.environ.get("WIZ_TOKEN"))
+    parser.add_argument("--wiz-auto-login-param", default=os.environ.get("WIZ_AUTO_LOGIN_PARAM"))
+    parser.add_argument("--wiz-server-url", default=os.environ.get("WIZ_SERVER_URL", "https://as.wiz.cn"))
+    parser.add_argument("--wiz-ks-url", default=os.environ.get("WIZ_KS_URL"))
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="wiz-to-obsidian")
+    parser = argparse.ArgumentParser(prog="wiz2obs_cli")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     scan_parser = subparsers.add_parser("scan")
-    scan_parser.add_argument("--leveldb-dir", type=Path, default=default_leveldb_dir())
-    scan_parser.add_argument("--blob-dir", type=Path, default=default_blob_dir())
+    _add_wiz_source_args(scan_parser)
 
     export_parser = subparsers.add_parser("export")
-    export_parser.add_argument("--leveldb-dir", type=Path, default=default_leveldb_dir())
-    export_parser.add_argument("--blob-dir", type=Path, default=default_blob_dir())
+    _add_wiz_source_args(export_parser)
     export_parser.add_argument("--output", type=Path, default=default_export_dir())
     export_parser.add_argument("--limit", type=int, default=None)
     export_parser.add_argument("--incremental", action="store_true")
     export_parser.add_argument("--hydrate-missing", action="store_true")
-    export_parser.add_argument("--cache-dir", type=Path, default=default_cache_dir())
-    export_parser.add_argument("--wiz-user-id", default=os.environ.get("WIZ_USER_ID"))
-    export_parser.add_argument("--wiz-password", default=os.environ.get("WIZ_PASSWORD"))
-    export_parser.add_argument("--wiz-token", default=os.environ.get("WIZ_TOKEN"))
-    export_parser.add_argument("--wiz-auto-login-param", default=os.environ.get("WIZ_AUTO_LOGIN_PARAM"))
-    export_parser.add_argument("--wiz-server-url", default=os.environ.get("WIZ_SERVER_URL", "https://as.wiz.cn"))
-    export_parser.add_argument("--wiz-ks-url", default=os.environ.get("WIZ_KS_URL"))
+    _add_hydration_args(export_parser)
+
+    sync_parser = subparsers.add_parser("sync")
+    _add_wiz_source_args(sync_parser)
+    sync_parser.add_argument("--output", type=Path, default=None)
+    sync_parser.add_argument("--limit", type=int, default=None)
+    sync_parser.add_argument("--full", action="store_true")
+    sync_parser.add_argument("--no-hydrate", action="store_true")
+    sync_parser.add_argument("--dry-run", action="store_true")
+    _add_hydration_args(sync_parser)
     return parser
 
 
@@ -149,6 +175,36 @@ def _write_progress(stderr: TextIO, stage: str, message: str) -> None:
 
 def _format_duration(seconds: float) -> str:
     return f"{seconds:.2f}s"
+
+
+def _prepare_sync_args(args, *, stderr: TextIO) -> None:
+    if args.output is None:
+        env_output = os.environ.get(OUTPUT_ENV_VAR)
+        if env_output:
+            args.output = Path(env_output)
+        else:
+            stderr.write(
+                "wiz2obs_cli sync: error: missing output directory: "
+                f"pass --output <Obsidian export dir> or set {OUTPUT_ENV_VAR} in .env\n"
+            )
+            raise SystemExit(2)
+
+    args.incremental = not args.full
+    args.hydrate_missing = not args.no_hydrate
+
+
+def _sync_dry_run_payload(args) -> dict[str, object]:
+    return {
+        "command": "sync",
+        "dry_run": True,
+        "mode": "full" if args.full else "incremental",
+        "hydrate": not args.no_hydrate,
+        "output_dir": str(args.output),
+        "leveldb_dir": str(args.leveldb_dir),
+        "blob_dir": str(args.blob_dir),
+        "cache_dir": str(args.cache_dir),
+        "limit": args.limit,
+    }
 
 
 def _call_with_supported_kwargs(function, /, **kwargs):
@@ -257,11 +313,16 @@ def main(
     time_fn=time.perf_counter,
 ) -> int:
     total_started_at = time_fn()
+    stdout = stdout or sys.stdout
+    stderr = stderr or sys.stderr
     _load_dotenv()
     parser = _build_parser()
     args = parser.parse_args(argv)
-    stdout = stdout or sys.stdout
-    stderr = stderr or sys.stderr
+    if args.command == "sync":
+        _prepare_sync_args(args, stderr=stderr)
+        if args.dry_run:
+            _write_json(stdout, _sync_dry_run_payload(args))
+            return 0
 
     if args.command == "scan":
         scan_started_at = time_fn()

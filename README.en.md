@@ -140,22 +140,35 @@ Incremental sync also removes:
 
 ## Releases
 
-Tagged GitHub releases publish one ZIP per platform, each containing a single-file binary plus `README.md` and `LICENSE`.
+Tagged GitHub releases publish one ZIP per platform, each containing a single-file binary plus `config.example.env`, a minimal `README.md`, and `LICENSE`.
 
 - `wiz2obs_cli-<tag>_windows_x64.zip`
 - `wiz2obs_cli-<tag>_macos_x64.zip`
 - `wiz2obs_cli-<tag>_linux_x64.zip`
 
-Binary usage after download:
+Recommended binary usage:
 
-- Windows: unzip `wiz2obs_cli-<tag>_windows_x64.zip`, then run `.\wiz2obs_cli.exe --help`
-- macOS: unzip `wiz2obs_cli-<tag>_macos_x64.zip`, then run `chmod +x ./wiz2obs_cli` and `./wiz2obs_cli --help`
-- Linux: unzip `wiz2obs_cli-<tag>_linux_x64.zip`, then run `chmod +x ./wiz2obs_cli` and `./wiz2obs_cli --help`
+1. Unzip the package for your platform.
+2. Copy `config.example.env` to `.env`, then fill in the output directory and Wiz credentials.
+3. Run `sync`.
 
-Typical direct usage with the released binary:
+Windows:
 
 ```powershell
-.\wiz2obs_cli.exe export --output D:\your\obsidian\WizSync --incremental --hydrate-missing
+.\wiz2obs_cli.exe sync
+```
+
+macOS / Linux:
+
+```bash
+chmod +x ./wiz2obs_cli
+./wiz2obs_cli sync
+```
+
+You can also override the output directory:
+
+```powershell
+.\wiz2obs_cli.exe sync --output D:\your\obsidian\WizSync
 ```
 
 ## 🧩 Project Structure

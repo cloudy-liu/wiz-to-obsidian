@@ -17,6 +17,25 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+_WIZ_ENV_KEYS = frozenset(
+    {
+        "WIZ_USER_ID",
+        "WIZ_PASSWORD",
+        "WIZ_TOKEN",
+        "WIZ_AUTO_LOGIN_PARAM",
+        "WIZ_SERVER_URL",
+        "WIZ_KS_URL",
+        "WIZ_TO_OBSIDIAN_OUTPUT_DIR",
+        "WIZ_LEVELDB_DIR",
+        "WIZ_BLOB_DIR",
+        "WIZ_CACHE_DIR",
+    }
+)
+
+
+def _clean_wiz_environ() -> dict[str, str]:
+    return {key: value for key, value in os.environ.items() if key not in _WIZ_ENV_KEYS}
+
 
 def import_or_fail(testcase: unittest.TestCase, module_name: str):
     try:
@@ -26,6 +45,13 @@ def import_or_fail(testcase: unittest.TestCase, module_name: str):
 
 
 class CliTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_environ = dict(os.environ)
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._original_environ)
+
     def test_scan_command_prints_inventory_summary_as_json(self) -> None:
         cli = import_or_fail(self, "wiz_to_obsidian.cli")
         models = import_or_fail(self, "wiz_to_obsidian.models")
@@ -222,6 +248,167 @@ class CliTests(unittest.TestCase):
             self.assertEqual(0, exit_code)
             self.assertEqual(1, payload["summary"]["exported_notes"])
             self.assertEqual(1, payload["summary"]["new_notes"])
+
+    def test_sync_command_dry_run_defaults_to_incremental_hydration(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout = io.StringIO()
+            with mock.patch.dict(os.environ, _clean_wiz_environ(), clear=True):
+                exit_code = cli.main(["sync", "--output", temp_dir, "--dry-run"], stdout=stdout)
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(0, exit_code)
+        self.assertTrue(payload["dry_run"])
+        self.assertEqual("incremental", payload["mode"])
+        self.assertTrue(payload["hydrate"])
+        self.assertEqual(str(Path(temp_dir)), payload["output_dir"])
+
+    def test_sync_command_dry_run_supports_full_mode_without_hydration(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout = io.StringIO()
+            with mock.patch.dict(os.environ, _clean_wiz_environ(), clear=True):
+                exit_code = cli.main(
+                    ["sync", "--output", temp_dir, "--full", "--no-hydrate", "--dry-run"],
+                    stdout=stdout,
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(0, exit_code)
+        self.assertEqual("full", payload["mode"])
+        self.assertFalse(payload["hydrate"])
+
+    def test_sync_command_reads_output_from_dotenv(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            work_dir = Path(temp_dir)
+            output_dir = work_dir / "vault" / "WizSync"
+            (work_dir / ".env").write_text(
+                f"WIZ_TO_OBSIDIAN_OUTPUT_DIR={output_dir}\n",
+                encoding="utf-8",
+            )
+            cwd = Path.cwd()
+            try:
+                os.chdir(work_dir)
+                stdout = io.StringIO()
+                with mock.patch.dict(os.environ, _clean_wiz_environ(), clear=True):
+                    exit_code = cli.main(["sync", "--dry-run"], stdout=stdout)
+            finally:
+                os.chdir(cwd)
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(0, exit_code)
+        self.assertEqual(str(output_dir), payload["output_dir"])
+
+    def test_load_dotenv_uses_binary_directory_when_frozen(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            binary_dir = Path(temp_dir) / "app"
+            binary_dir.mkdir()
+            binary_path = binary_dir / "wiz2obs_cli.exe"
+            binary_path.write_text("", encoding="utf-8")
+            (binary_dir / ".env").write_text(
+                "WIZ_TO_OBSIDIAN_OUTPUT_DIR=D:\\vault\\WizSync\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.dict(os.environ, _clean_wiz_environ(), clear=True),
+                mock.patch.object(cli.sys, "executable", str(binary_path)),
+                mock.patch.object(cli.sys, "frozen", True, create=True),
+            ):
+                cli._load_dotenv()
+                self.assertEqual("D:\\vault\\WizSync", os.environ["WIZ_TO_OBSIDIAN_OUTPUT_DIR"])
+
+    def test_sync_command_requires_output_when_env_missing(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cwd = Path.cwd()
+            try:
+                os.chdir(temp_dir)
+                stderr = io.StringIO()
+                with mock.patch.dict(os.environ, _clean_wiz_environ(), clear=True):
+                    with self.assertRaises(SystemExit) as error:
+                        cli.main(["sync", "--dry-run"], stderr=stderr)
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(2, error.exception.code)
+        self.assertIn("--output", stderr.getvalue())
+
+    def test_sync_command_dispatches_incremental_sync_with_hydration_by_default(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        hydration = import_or_fail(self, "wiz_to_obsidian.wiz_hydration")
+
+        inventory = models.Inventory(
+            notes=(
+                models.WizNote(
+                    kb_name="Main KB",
+                    kb_guid="kb-1",
+                    doc_guid="doc-1",
+                    title="Roadmap",
+                    updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+                    body=models.NoteBody(markdown="# Ready"),
+                ),
+            )
+        )
+        captured: dict[str, object] = {}
+
+        class FakeSyncResult:
+            def __init__(self, output_dir: Path) -> None:
+                self.output_dir = output_dir
+                self.report_path = output_dir / "_wiz" / "report.json"
+                self.report = {
+                    "summary": {
+                        "total_notes": 1,
+                        "exported_notes": 1,
+                        "skipped_notes": 0,
+                        "new_notes": 1,
+                        "updated_notes": 0,
+                        "moved_notes": 0,
+                        "removed_old_paths": 0,
+                        "exported_resources": 0,
+                        "exported_attachments": 0,
+                    }
+                }
+
+        def fake_sync(**kwargs):
+            captured.update(kwargs)
+            return FakeSyncResult(Path(kwargs["output_dir"]))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout = io.StringIO()
+            with mock.patch.dict(os.environ, _clean_wiz_environ(), clear=True):
+                exit_code = cli.main(
+                    ["sync", "--output", temp_dir],
+                    stdout=stdout,
+                    scan_inventory_metadata_fn=lambda leveldb_dir, blob_dir: inventory,
+                    load_note_payloads_fn=lambda **kwargs: inventory,
+                    build_hydration_client_fn=lambda args: object(),
+                    hydrate_inventory_fn=lambda **kwargs: hydration.HydrationResult(
+                        inventory=kwargs["inventory"],
+                        summary={
+                            "hydrated_notes": 0,
+                            "hydrated_resources": 0,
+                            "hydrated_attachments": 0,
+                            "hydration_failures": 0,
+                        },
+                    ),
+                    incremental_sync_inventory_fn=fake_sync,
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(0, exit_code)
+        self.assertEqual(1, payload["summary"]["exported_notes"])
+        self.assertIn("hydrate", payload["timings"])
+        self.assertEqual(Path(temp_dir), captured["output_dir"])
+        plan = captured["plan"]
+        self.assertEqual(("doc-1",), tuple(note.doc_guid for note in plan.notes_to_export))
 
     def test_incremental_export_only_loads_local_payloads_for_planned_notes(self) -> None:
         cli = import_or_fail(self, "wiz_to_obsidian.cli")

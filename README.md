@@ -141,22 +141,35 @@ python .\scripts\sync_wiz_to_obsidian.py --output D:\your\obsidian\WizSync
 
 ## 📦 Release 产物
 
-GitHub tag release 会按平台发布 x64 ZIP 包，每个平台一个产物，包内包含单文件可执行程序、`README.md` 和 `LICENSE`：
+GitHub tag release 会按平台发布 x64 ZIP 包，每个平台一个产物，包内包含单文件可执行程序、`config.example.env`、极简 `README.md` 和 `LICENSE`：
 
 - `wiz2obs_cli-<tag>_windows_x64.zip`
 - `wiz2obs_cli-<tag>_macos_x64.zip`
 - `wiz2obs_cli-<tag>_linux_x64.zip`
 
-下载后的 bin 用法：
+下载后的推荐用法：
 
-- Windows：解压 `wiz2obs_cli-<tag>_windows_x64.zip`，执行 `.\wiz2obs_cli.exe --help`
-- macOS：解压 `wiz2obs_cli-<tag>_macos_x64.zip`，执行 `chmod +x ./wiz2obs_cli` 后再运行 `./wiz2obs_cli --help`
-- Linux：解压 `wiz2obs_cli-<tag>_linux_x64.zip`，执行 `chmod +x ./wiz2obs_cli` 后再运行 `./wiz2obs_cli --help`
+1. 解压对应平台 ZIP
+2. 复制 `config.example.env` 为 `.env`，并填写输出目录和 Wiz 凭证
+3. 运行 `sync`
 
-典型的直接运行方式：
+Windows：
 
 ```powershell
-.\wiz2obs_cli.exe export --output D:\your\obsidian\WizSync --incremental --hydrate-missing
+.\wiz2obs_cli.exe sync
+```
+
+macOS / Linux：
+
+```bash
+chmod +x ./wiz2obs_cli
+./wiz2obs_cli sync
+```
+
+也可以临时覆盖输出目录：
+
+```powershell
+.\wiz2obs_cli.exe sync --output D:\your\obsidian\WizSync
 ```
 
 ## 🛣️ 路径参数说明
