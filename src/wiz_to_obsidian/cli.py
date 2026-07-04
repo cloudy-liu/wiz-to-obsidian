@@ -12,6 +12,7 @@ from typing import TextIO
 from .config import default_blob_dir, default_cache_dir, default_export_dir, default_leveldb_dir
 from .exporter import export_inventory
 from .models import Inventory
+from .postprocess import rewrite_tables
 from .sync import IncrementalSyncPlan, incremental_sync_inventory, load_or_rebuild_sync_state, plan_incremental_sync, write_sync_state
 from .wiz_cache import CachedWizClient, ChromiumCacheBackend
 from .wiz_hydration import CompositeWizContentClient, HydrationResult, HydrationSourceTracker, hydrate_inventory
@@ -160,6 +161,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sync_parser.add_argument("--no-hydrate", action="store_true")
     sync_parser.add_argument("--dry-run", action="store_true")
     _add_hydration_args(sync_parser)
+
+    rewrite_parser = subparsers.add_parser("rewrite-tables")
+    rewrite_parser.add_argument("--input", type=Path, required=True)
+    rewrite_parser.add_argument("--output", type=Path, default=None)
+    rewrite_parser.add_argument("--write", action="store_true")
+    rewrite_parser.add_argument("--dry-run", action="store_true")
+    rewrite_parser.add_argument("--force", action="store_true")
+    rewrite_parser.add_argument("--mode", choices=("hybrid", "fidelity", "editable"), default="hybrid")
     return parser
 
 
@@ -310,6 +319,7 @@ def main(
     build_hydration_client_fn=_build_hydration_client,
     export_inventory_fn=export_inventory,
     incremental_sync_inventory_fn=incremental_sync_inventory,
+    rewrite_tables_fn=rewrite_tables,
     time_fn=time.perf_counter,
 ) -> int:
     total_started_at = time_fn()
@@ -318,6 +328,19 @@ def main(
     _load_dotenv()
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.command == "rewrite-tables":
+        if args.dry_run and (args.output is not None or args.write):
+            parser.error("rewrite-tables: --dry-run cannot be combined with --output or --write")
+        result = rewrite_tables_fn(
+            args.input,
+            output_dir=args.output,
+            write=args.write,
+            force=args.force,
+            mode=args.mode,
+        )
+        _write_json(stdout, result.to_report())
+        return 0
+
     if args.command == "sync":
         _prepare_sync_args(args, stderr=stderr)
         if args.dry_run:

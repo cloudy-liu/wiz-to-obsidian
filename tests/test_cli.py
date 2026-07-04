@@ -52,6 +52,61 @@ class CliTests(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._original_environ)
 
+    def test_rewrite_tables_command_dry_run_reports_json(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "Tools.md").write_text(
+                "<table><tr><th>A</th></tr><tr><td>B</td></tr></table>",
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+
+            exit_code = cli.main(
+                ["rewrite-tables", "--input", temp_dir, "--dry-run"],
+                stdout=stdout,
+            )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(0, exit_code)
+            self.assertTrue(payload["dry_run"])
+            self.assertEqual(1, payload["summary"]["html_tables"])
+            self.assertEqual(1, payload["summary"]["converted_tables"])
+            self.assertIn("<table>", (root / "Tools.md").read_text(encoding="utf-8"))
+
+    def test_rewrite_tables_command_writes_output_copy(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            input_dir = base / "vault"
+            output_dir = base / "vault-table-md"
+            input_dir.mkdir()
+            (input_dir / "Tools.md").write_text(
+                "<table><tr><th>A</th></tr><tr><td>B</td></tr></table>",
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+
+            exit_code = cli.main(
+                [
+                    "rewrite-tables",
+                    "--input",
+                    str(input_dir),
+                    "--output",
+                    str(output_dir),
+                ],
+                stdout=stdout,
+            )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(0, exit_code)
+            self.assertFalse(payload["dry_run"])
+            self.assertEqual(1, payload["summary"]["converted_tables"])
+            self.assertIn("| A |", (output_dir / "Tools.md").read_text(encoding="utf-8"))
+            self.assertTrue((output_dir / "_wiz" / "rewrite-tables-report.json").exists())
+
     def test_scan_command_prints_inventory_summary_as_json(self) -> None:
         cli = import_or_fail(self, "wiz_to_obsidian.cli")
         models = import_or_fail(self, "wiz_to_obsidian.models")

@@ -138,6 +138,28 @@ Incremental sync also removes:
 - Orphaned exported resources under `_wiz/resources/<doc_guid>/`
 - Orphaned exported attachments under `_wiz/attachments/<doc_guid>/`
 
+## Rewrite Exported HTML Tables
+
+If you already exported a vault and later find that HTML `<table>` blocks are hard to edit in Obsidian, use `rewrite-tables` to convert safe HTML tables into Markdown pipe tables. This keeps images and links in table cells, while making the table rows editable by Obsidian and table plugins.
+
+Preview first:
+
+```powershell
+wiz2obs_cli rewrite-tables --input D:\your\obsidian\WizSync --dry-run
+```
+
+Write a converted copy:
+
+```powershell
+wiz2obs_cli rewrite-tables --input D:\your\obsidian\WizSync --output D:\your\obsidian\WizSync-table-md
+```
+
+Rewrite in place only when you have verified a copy or have a backup:
+
+```powershell
+wiz2obs_cli rewrite-tables --input D:\your\obsidian\WizSync --write
+```
+
 ## Releases
 
 Tagged GitHub releases publish one ZIP per platform, each containing a single-file binary plus `config.example.env`, a minimal `README.md`, and `LICENSE`.
