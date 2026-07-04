@@ -138,6 +138,10 @@ def _add_hydration_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--wiz-ks-url", default=os.environ.get("WIZ_KS_URL"))
 
 
+def _add_table_mode_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--table-mode", choices=("hybrid", "fidelity", "editable"), default="hybrid")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="wiz2obs_cli")
 
@@ -152,6 +156,7 @@ def _build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--incremental", action="store_true")
     export_parser.add_argument("--hydrate-missing", action="store_true")
     _add_hydration_args(export_parser)
+    _add_table_mode_arg(export_parser)
 
     sync_parser = subparsers.add_parser("sync")
     _add_wiz_source_args(sync_parser)
@@ -161,6 +166,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sync_parser.add_argument("--no-hydrate", action="store_true")
     sync_parser.add_argument("--dry-run", action="store_true")
     _add_hydration_args(sync_parser)
+    _add_table_mode_arg(sync_parser)
 
     rewrite_parser = subparsers.add_parser("rewrite-tables")
     rewrite_parser.add_argument("--input", type=Path, required=True)
@@ -213,6 +219,7 @@ def _sync_dry_run_payload(args) -> dict[str, object]:
         "blob_dir": str(args.blob_dir),
         "cache_dir": str(args.cache_dir),
         "limit": args.limit,
+        "table_mode": args.table_mode,
     }
 
 
@@ -595,6 +602,7 @@ def main(
             hydration_repair_status=hydration_repair_status,
             doc_version=remote_max_version,
             att_version=remote_att_version,
+            table_mode=args.table_mode,
         )
         sync_duration = _format_duration(time_fn() - sync_started_at)
         _write_progress(stderr, "sync", f"done in {sync_duration}")
@@ -656,6 +664,7 @@ def main(
             inventory=inventory,
             output_dir=args.output,
             limit=args.limit,
+            table_mode=args.table_mode,
             progress=lambda message: _write_progress(stderr, "export", message),
         )
         export_duration = _format_duration(time_fn() - export_started_at)

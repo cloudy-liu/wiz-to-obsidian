@@ -307,6 +307,36 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(1, result.report["summary"]["moved_notes"])
             self.assertEqual(1, result.report["summary"]["removed_old_paths"])
 
+    def test_incremental_sync_inventory_passes_table_mode_to_export(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        sync = import_or_fail(self, "wiz_to_obsidian.sync")
+
+        note = models.WizNote(
+            kb_name="KB",
+            kb_guid="kb-1",
+            doc_guid="doc-table",
+            title="Table",
+            folder_parts=("Inbox",),
+            updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+            body=models.NoteBody(
+                markdown="<table><tr><th>A</th></tr><tr><td>B</td></tr></table>",
+            ),
+        )
+        inventory = models.Inventory(notes=(note,))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            sync.incremental_sync_inventory(
+                inventory=inventory,
+                output_dir=output_dir,
+                table_mode="hybrid",
+                sync_state=models.SyncState(notes_by_doc_guid={}),
+            )
+            note_text = (output_dir / "Inbox" / "Table.md").read_text(encoding="utf-8")
+
+            self.assertIn("| A |", note_text)
+            self.assertNotIn("<table>", note_text)
+
     def test_incremental_sync_inventory_preserves_existing_body_when_moved_note_body_missing(self) -> None:
         models = import_or_fail(self, "wiz_to_obsidian.models")
         sync = import_or_fail(self, "wiz_to_obsidian.sync")

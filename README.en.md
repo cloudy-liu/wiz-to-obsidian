@@ -96,6 +96,16 @@ python .\scripts\sync_wiz_to_obsidian.py --output D:\your\obsidian\WizSync --ful
 python .\scripts\sync_wiz_to_obsidian.py --output D:\your\obsidian\WizSync --dry-run
 ```
 
+### Table output mode
+
+By default, `export` and `sync` use `--table-mode hybrid`: safe HTML `<table>` blocks are rewritten into editable Markdown pipe tables, while images inside cells are preserved as HTML `<img>` tags.
+
+Use `fidelity` if you prefer to keep exported table HTML unchanged:
+
+```powershell
+wiz2obs_cli sync --output D:\your\obsidian\WizSync --table-mode fidelity
+```
+
 ## 📂 Output Layout
 
 ```text

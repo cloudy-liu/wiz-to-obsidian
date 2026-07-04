@@ -19,6 +19,7 @@ from .markdown_export import (
 )
 from .models import Inventory, SyncAttachmentInfo, SyncState, SyncStateNote, WizNote
 from .reporting import build_export_report
+from .table_markdown import TableConversionMode, convert_html_tables_in_markdown
 
 
 INVALID_FILE_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1F]+')
@@ -410,6 +411,7 @@ def export_inventory(
     existing_note_paths_by_doc_guid: dict[str, Path] | None = None,
     write_report: bool = True,
     write_content_audit_files: bool = True,
+    table_mode: TableConversionMode | str = TableConversionMode.HYBRID,
     progress: Callable[[str], None] | None = None,
 ) -> ExportResult:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -548,6 +550,7 @@ def export_inventory(
             note_markdown = render_note_markdown(note_for_export, resource_paths)
             note_markdown = _append_attachment_section(note_markdown, attachment_lines)
             note_markdown = _replace_missing_assets(note_markdown, note_missing_resources)
+            note_markdown, _ = convert_html_tables_in_markdown(note_markdown, mode=table_mode)
         if not note_path.exists() or note_path.read_text(encoding="utf-8") != note_markdown:
             note_path.write_text(note_markdown, encoding="utf-8")
         note_paths_by_doc_guid[note.doc_guid] = note_path

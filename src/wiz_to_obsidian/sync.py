@@ -9,6 +9,7 @@ from typing import Callable, Mapping, Sequence
 from .exporter import ExportResult, export_inventory
 from .markdown_export import NotePathResolver
 from .models import Inventory, NoteForExport, SyncAttachmentInfo, SyncState, SyncStateNote, WizNote
+from .table_markdown import TableConversionMode
 
 
 FRONTMATTER_BLOCK = re.compile(r"\A---\s*\r?\n(?P<body>.*?)(?:\r?\n)---(?:\r?\n|\Z)", re.DOTALL)
@@ -478,6 +479,7 @@ def incremental_sync_inventory(
     hydration_repair_status: Mapping[str, bool] | None = None,
     doc_version: int = 0,
     att_version: int = 0,
+    table_mode: TableConversionMode | str = TableConversionMode.HYBRID,
 ) -> IncrementalSyncResult:
     base_state = sync_state or load_or_rebuild_sync_state(output_dir).state
     if plan is None:
@@ -536,6 +538,7 @@ def incremental_sync_inventory(
             },
             write_report=False,
             write_content_audit_files=False,
+            table_mode=table_mode,
             progress=progress,
         )
 

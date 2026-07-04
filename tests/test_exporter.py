@@ -118,6 +118,47 @@ class ExporterTests(unittest.TestCase):
             self.assertIn("![](../_wiz/resources/doc-html/cover.png)", note_text)
             self.assertEqual(1, result.report["summary"]["exported_resources"])
 
+    def test_export_inventory_rewrites_html_tables_when_table_mode_is_hybrid(self) -> None:
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+        exporter = import_or_fail(self, "wiz_to_obsidian.exporter")
+
+        note = models.WizNote(
+            kb_name="Main KB",
+            kb_guid="kb-1",
+            doc_guid="doc-table",
+            title="Tools",
+            folder_parts=("Inbox",),
+            note_type="lite/markdown",
+            body=models.NoteBody(
+                markdown=(
+                    "<table><tr><th>Name</th><th>Preview</th></tr>"
+                    '<tr><td>VSCode</td><td><img src="wiz-resource://doc-table/shot.png"></td></tr>'
+                    "</table>"
+                )
+            ),
+        )
+        inventory = models.Inventory(
+            notes=(note,),
+            resource_bytes_by_key={"wiz-resource://doc-table/shot.png": b"img"},
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            exporter.export_inventory(
+                inventory=inventory,
+                output_dir=output_dir,
+                table_mode="hybrid",
+            )
+            note_text = (output_dir / "Inbox" / "Tools.md").read_text(encoding="utf-8")
+
+            self.assertIn("| Name | Preview |", note_text)
+            self.assertIn("| --- | --- |", note_text)
+            self.assertIn(
+                '<img src="../_wiz/resources/doc-table/shot.png" alt="">',
+                note_text,
+            )
+            self.assertNotIn("<table>", note_text)
+
     def test_export_inventory_reports_progress_for_each_note(self) -> None:
         models = import_or_fail(self, "wiz_to_obsidian.models")
         exporter = import_or_fail(self, "wiz_to_obsidian.exporter")

@@ -167,6 +167,38 @@ class CliTests(unittest.TestCase):
             self.assertEqual(1, payload["summary"]["total_notes"])
             self.assertEqual(1, payload["summary"]["exported_notes"])
 
+    def test_export_command_passes_table_mode_to_exporter(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+
+        inventory = models.Inventory(notes=())
+        captured: dict[str, object] = {}
+
+        def fake_export(**kwargs):
+            captured.update(kwargs)
+            output_dir = Path(kwargs["output_dir"])
+            return type(
+                "Result",
+                (),
+                {
+                    "output_dir": output_dir,
+                    "report_path": output_dir / "_wiz" / "report.json",
+                    "report": {"summary": {"total_notes": 0, "exported_notes": 0}},
+                    "sync_state": None,
+                },
+            )()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            exit_code = cli.main(
+                ["export", "--output", temp_dir, "--table-mode", "fidelity"],
+                stdout=io.StringIO(),
+                scan_inventory_fn=lambda leveldb_dir, blob_dir: inventory,
+                export_inventory_fn=fake_export,
+            )
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual("fidelity", captured["table_mode"])
+
     def test_export_command_accepts_wiz_source_dir_overrides_after_subcommand(self) -> None:
         cli = import_or_fail(self, "wiz_to_obsidian.cli")
         models = import_or_fail(self, "wiz_to_obsidian.models")
@@ -318,6 +350,60 @@ class CliTests(unittest.TestCase):
         self.assertEqual("incremental", payload["mode"])
         self.assertTrue(payload["hydrate"])
         self.assertEqual(str(Path(temp_dir)), payload["output_dir"])
+        self.assertEqual("hybrid", payload["table_mode"])
+
+    def test_sync_command_passes_table_mode_to_incremental_sync(self) -> None:
+        cli = import_or_fail(self, "wiz_to_obsidian.cli")
+        models = import_or_fail(self, "wiz_to_obsidian.models")
+
+        inventory = models.Inventory(
+            notes=(
+                models.WizNote(
+                    kb_name="Main KB",
+                    kb_guid="kb-1",
+                    doc_guid="doc-1",
+                    title="Roadmap",
+                    updated_at=datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc),
+                    body=models.NoteBody(markdown="# Ready"),
+                ),
+            )
+        )
+        captured: dict[str, object] = {}
+
+        class FakeSyncResult:
+            def __init__(self, output_dir: Path) -> None:
+                self.output_dir = output_dir
+                self.report_path = output_dir / "_wiz" / "report.json"
+                self.report = {
+                    "summary": {
+                        "total_notes": 1,
+                        "exported_notes": 1,
+                        "skipped_notes": 0,
+                        "new_notes": 1,
+                        "updated_notes": 0,
+                        "moved_notes": 0,
+                        "removed_old_paths": 0,
+                        "exported_resources": 0,
+                        "exported_attachments": 0,
+                    }
+                }
+
+        def fake_sync(**kwargs):
+            captured.update(kwargs)
+            return FakeSyncResult(Path(kwargs["output_dir"]))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.dict(os.environ, _clean_wiz_environ(), clear=True):
+                exit_code = cli.main(
+                    ["sync", "--output", temp_dir, "--no-hydrate", "--table-mode", "editable"],
+                    stdout=io.StringIO(),
+                    scan_inventory_metadata_fn=lambda leveldb_dir, blob_dir: inventory,
+                    load_note_payloads_fn=lambda **kwargs: inventory,
+                    incremental_sync_inventory_fn=fake_sync,
+                )
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual("editable", captured["table_mode"])
 
     def test_sync_command_dry_run_supports_full_mode_without_hydration(self) -> None:
         cli = import_or_fail(self, "wiz_to_obsidian.cli")
