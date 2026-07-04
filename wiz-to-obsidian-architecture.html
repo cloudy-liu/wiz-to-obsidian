@@ -1,0 +1,1845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiz To Obsidian Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --canvas: #E8E6DD;
+      --paper: #FAF9F5;
+      --paper-soft: #F6F3EC;
+      --ink: #141413;
+      --text: #3D3C38;
+      --muted: #6F6C65;
+      --line: #9A9991;
+      --line-soft: #C9C3B8;
+      --neutral-fill: #EDEAE3;
+      --neutral-stroke: #9A9991;
+      --frontend-fill: #E0E0F0;
+      --frontend-stroke: #8585DD;
+      --backend-fill: #D8E8D8;
+      --backend-stroke: #76B985;
+      --data-fill: #E4EEF4;
+      --data-stroke: #6A9BCC;
+      --cloud-fill: #F0DED7;
+      --cloud-stroke: #D87858;
+      --security-fill: #F3E4DA;
+      --security-stroke: #C88E6A;
+      --event-fill: #E6D7B4;
+      --event-stroke: #BFA777;
+      --font-laper: Montserrat, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", sans-serif;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    ::selection {
+      background: #E6D7B4;
+      color: var(--ink);
+    }
+
+    body {
+      min-height: 100vh;
+      padding: 32px;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--font-laper);
+      letter-spacing: 0;
+    }
+
+    .container {
+      max-width: 1380px;
+      margin: 0 auto;
+    }
+
+    .header {
+      position: relative;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .header h1 {
+      color: var(--ink);
+      font-size: 42px;
+      line-height: 1.08;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 720px;
+      margin: 10px auto 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+      font-weight: 400;
+    }
+
+    .toolbar {
+      position: absolute;
+      top: 4px;
+      right: 0;
+      display: inline-flex;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .toolbar-actions {
+      position: absolute;
+      top: 0;
+      left: calc(100% + 8px);
+      display: none;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      width: 176px;
+      padding: 6px;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      background: rgba(250, 249, 245, 0.96);
+      box-shadow: 0 12px 30px rgba(20, 20, 19, 0.10);
+      text-align: left;
+    }
+
+    .toolbar.expanded .toolbar-actions {
+      display: flex;
+    }
+
+    .toolbar.toolbar-flip .toolbar-actions {
+      right: calc(100% + 8px);
+      left: auto;
+    }
+
+    .toolbar-toggle,
+    .toolbar-actions button {
+      border: 1px solid var(--line-soft);
+      border-radius: 999px;
+      background: var(--paper);
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .toolbar-toggle {
+      padding: 9px 13px;
+    }
+
+    .toolbar-actions button {
+      width: 100%;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .toolbar-toggle:hover,
+    .toolbar-actions button:hover {
+      border-color: var(--line);
+      color: var(--ink);
+      background: #FFFFFF;
+    }
+
+    .diagram-container {
+      overflow-x: auto;
+      padding: 24px;
+      border: 1px solid var(--line-soft);
+      border-radius: 28px;
+      background: var(--paper);
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      min-width: 1200px;
+      font-family: var(--font-laper);
+    }
+
+    .footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 18px;
+      }
+
+      .header h1 {
+        font-size: 30px;
+        padding-right: 84px;
+        text-align: left;
+      }
+
+      .toolbar {
+        top: 0;
+        right: 0;
+      }
+
+      .toolbar-actions {
+        position: fixed;
+        top: auto;
+        right: 18px;
+        bottom: 18px;
+        left: 18px;
+        width: auto;
+      }
+
+      .toolbar.toolbar-flip .toolbar-actions {
+        right: 18px;
+        left: 18px;
+      }
+
+      .diagram-container {
+        padding: 16px;
+        border-radius: 22px;
+      }
+    }
+
+    @media print {
+      body {
+        background: var(--canvas);
+        padding: 16px;
+      }
+
+      .toolbar {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="report-container">
+    <header class="header">
+      <h1>Wiz To Obsidian Architecture</h1>
+      <div class="toolbar">
+        <button class="toolbar-toggle" type="button" onclick="toggleExportMenu(this)" title="Export options" aria-label="Export options" aria-expanded="false">Export</button>
+        <div class="toolbar-actions" role="menu" aria-label="Export options">
+          <button type="button" role="menuitem" onclick="copyAsImage(this)" title="Copy diagram as image to clipboard" aria-label="Copy diagram as image to clipboard">Copy Image</button>
+          <button type="button" role="menuitem" onclick="downloadPNG(this)">Download PNG</button>
+          <button type="button" role="menuitem" onclick="downloadPDF(this)">Download PDF</button>
+          <button type="button" role="menuitem" onclick="downloadDrawio(this)">Download Draw.io</button>
+        </div>
+      </div>
+      <p class="subtitle">Current code path: local IndexedDB scan, cache and remote hydration, incremental sync, inline table rewrite during export, and tag-driven release packaging.</p>
+    </header>
+
+    <main class="diagram-container">
+      <svg viewBox="0 0 1400 900" role="img" aria-labelledby="diagram-title diagram-desc">
+        <title id="diagram-title">Wiz To Obsidian current architecture</title>
+        <desc id="diagram-desc">Technical architecture for the current Wiz To Obsidian repository, showing entry points, local scan, hydration adapters, incremental sync and export, Obsidian outputs, and the GitHub release workflow.</desc>
+
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M 1 1 L 7 3 L 1 5" fill="none" stroke="#9A9991" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+
+        <rect width="1400" height="900" rx="18" fill="#FAF9F5" data-drawio-ignore="true" data-drawio-ignore-reason="paper background is represented by the draw.io page"/>
+
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="entry-boundary">
+          <rect x="40" y="88" width="250" height="458" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="60" y="118" fill="#6F6C65" font-size="13" font-weight="600">Entry / Orchestration</text>
+        </g>
+
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="core-boundary">
+          <rect x="320" y="88" width="760" height="540" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="340" y="118" fill="#6F6C65" font-size="13" font-weight="600">Core Pipeline</text>
+        </g>
+
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="sources-boundary">
+          <rect x="1110" y="88" width="250" height="458" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="1130" y="118" fill="#6F6C65" font-size="13" font-weight="600">Wiz Local + Remote Sources</text>
+        </g>
+
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="outputs-boundary">
+          <rect x="320" y="660" width="680" height="132" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="340" y="690" fill="#6F6C65" font-size="13" font-weight="600">Obsidian Export</text>
+        </g>
+
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="release-boundary">
+          <rect x="1055" y="575" width="305" height="217" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="1075" y="605" fill="#6F6C65" font-size="13" font-weight="600">GitHub Release Path</text>
+        </g>
+
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="local-scan-panel">
+          <rect x="350" y="145" width="220" height="220" rx="20" fill="#FAF9F5" stroke="#C9C3B8" stroke-width="1.5" stroke-dasharray="6 6"/>
+          <text x="368" y="171" fill="#6F6C65" font-size="13" font-weight="600">Local scan</text>
+        </g>
+
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="hydration-panel">
+          <rect x="600" y="145" width="220" height="260" rx="20" fill="#FAF9F5" stroke="#C9C3B8" stroke-width="1.5" stroke-dasharray="6 6"/>
+          <text x="618" y="171" fill="#6F6C65" font-size="13" font-weight="600">Hydration</text>
+        </g>
+
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="export-panel">
+          <rect x="850" y="145" width="200" height="435" rx="20" fill="#FAF9F5" stroke="#C9C3B8" stroke-width="1.5" stroke-dasharray="6 6"/>
+          <text x="868" y="171" fill="#6F6C65" font-size="13" font-weight="600">Sync + export</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="user-to-script">
+          <line x1="165" y1="224" x2="165" y2="260" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+          <text x="183" y="247" fill="#6F6C65" font-size="11" font-weight="500">run</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="script-to-cli">
+          <line x1="165" y1="350" x2="165" y2="380" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="cli-to-local">
+          <path d="M 260 432 C 320 408, 346 312, 378 234" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="318" y="334" fill="#6F6C65" font-size="11" font-weight="500">orchestrates scan</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="local-to-indexeddb">
+          <path d="M 542 220 C 690 165, 930 150, 1145 197" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="835" y="158" fill="#6F6C65" font-size="11" font-weight="500">leveldb / blob records</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="local-to-hydration">
+          <line x1="542" y1="234" x2="625" y2="234" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+          <text x="584" y="219" fill="#6F6C65" font-size="11" font-weight="500" text-anchor="middle">Inventory</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="carrier" data-drawio-id="cache-source-to-adapter">
+          <path d="M 1145 318 C 1035 312, 900 322, 702 338" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="933" y="304" fill="#6F6C65" font-size="11" font-weight="500">snapshot cache</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="carrier" data-drawio-id="remote-source-to-adapter">
+          <path d="M 1145 447 C 1045 435, 945 375, 800 338" fill="none" stroke="#D87858" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="981" y="388" fill="#6F6C65" font-size="11" font-weight="500">HTTPS / websocket</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="cache-to-hydration">
+          <path d="M 661 310 C 670 292, 684 281, 699 272" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="remote-to-hydration">
+          <path d="M 759 310 C 752 292, 740 281, 724 272" fill="none" stroke="#D87858" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="support-flow" data-drawio-id="remote-to-sync-version-check">
+          <path d="M 800 330 C 830 315, 846 272, 870 238" fill="none" stroke="#76B985" stroke-width="1.6" stroke-dasharray="6 6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="848" y="295" fill="#6F6C65" font-size="11" font-weight="500">remote version check</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="hydration-to-sync">
+          <line x1="795" y1="221" x2="870" y2="221" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+          <text x="833" y="206" fill="#6F6C65" font-size="11" font-weight="500" text-anchor="middle">hydrated inventory</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="sync-to-exporter">
+          <line x1="950" y1="262" x2="950" y2="292" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="exporter-to-markdown">
+          <line x1="950" y1="366" x2="950" y2="392" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="transformation" data-drawio-id="markdown-to-table">
+          <line x1="950" y1="466" x2="950" y2="496" stroke="#BFA777" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="observable-output" data-drawio-id="table-to-markdown-output">
+          <path d="M 865 511 C 760 560, 610 635, 520 733" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="695" y="600" fill="#6F6C65" font-size="11" font-weight="500">final markdown</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="observable-output" data-drawio-id="exporter-to-assets-output">
+          <path d="M 1030 329 C 1080 430, 940 620, 770 733" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="953" y="570" fill="#6F6C65" font-size="11" font-weight="500">assets</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="state-store" data-drawio-id="sync-to-state-output">
+          <path d="M 1030 221 C 1086 336, 1070 610, 990 733" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="1060" y="566" fill="#6F6C65" font-size="11" font-weight="500">state + report</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="observable-output" data-drawio-id="audit-to-state-output">
+          <path d="M 1030 552 C 1045 612, 1032 680, 990 747" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-dasharray="6 6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="1042" y="646" fill="#6F6C65" font-size="11" font-weight="500">audit files</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="support-flow" data-drawio-id="cli-to-postprocess">
+          <line x1="165" y1="478" x2="165" y2="502" stroke="#BFA777" stroke-width="1.6" stroke-dasharray="5 5" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+          <text x="189" y="495" fill="#6F6C65" font-size="11" font-weight="500">rewrite-tables</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="support-flow" data-drawio-id="postprocess-to-table">
+          <path d="M 244 530 C 430 578, 650 548, 865 511" fill="none" stroke="#BFA777" stroke-width="1.6" stroke-dasharray="5 5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="562" y="586" fill="#6F6C65" font-size="11" font-weight="500">standalone table pass</text>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="tag-to-workflow">
+          <line x1="1197" y1="647" x2="1215" y2="647" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        </g>
+
+        <g data-drawio-type="edge" data-drawio-role="observable-output" data-drawio-id="workflow-to-release">
+          <path d="M 1275 693 C 1275 730, 1248 748, 1208 772" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="1294" y="734" fill="#6F6C65" font-size="11" font-weight="500">GitHub Release</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="trigger" data-drawio-id="user-scheduler">
+          <rect x="78" y="150" width="174" height="74" rx="14" fill="#EDEAE3" stroke="#9A9991" stroke-width="2"/>
+          <text x="165" y="182" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">User / Scheduler</text>
+          <text x="165" y="204" fill="#5F5A54" font-size="12" text-anchor="middle">manual run or cron</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="sync-script">
+          <rect x="70" y="266" width="190" height="84" rx="14" fill="#EDEAE3" stroke="#9A9991" stroke-width="2"/>
+          <text x="165" y="298" fill="#3D3C38" font-size="13" font-weight="600" text-anchor="middle">sync_wiz_to_obsidian.py</text>
+          <text x="165" y="319" fill="#5F5A54" font-size="12" text-anchor="middle">scripts/ wrapper</text>
+          <text x="165" y="338" fill="#6F6C65" font-size="11" text-anchor="middle">load dotenv + subprocess</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="cli-module">
+          <rect x="70" y="386" width="190" height="92" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="165" y="419" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">wiz_to_obsidian.cli</text>
+          <text x="165" y="441" fill="#5F5A54" font-size="12" text-anchor="middle">scan / export / sync</text>
+          <text x="165" y="460" fill="#6F6C65" font-size="11" text-anchor="middle">rewrite-tables command</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="transformation" data-drawio-id="postprocess-module">
+          <rect x="86" y="502" width="158" height="56" rx="14" fill="#E6D7B4" stroke="#BFA777" stroke-width="1.5"/>
+          <text x="165" y="527" fill="#3D3C38" font-size="13" font-weight="600" text-anchor="middle">postprocess.py</text>
+          <text x="165" y="545" fill="#5F5A54" font-size="11" text-anchor="middle">rewrite_tables</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="wiz-local-module">
+          <rect x="378" y="195" width="164" height="78" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="460" y="227" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">wiz_local.py</text>
+          <text x="460" y="249" fill="#5F5A54" font-size="12" text-anchor="middle">scan_local_wiz / metadata</text>
+          <text x="460" y="268" fill="#6F6C65" font-size="11" text-anchor="middle">IndexedDB -&gt; Inventory</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="models-module">
+          <rect x="378" y="304" width="76" height="50" rx="12" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1.5"/>
+          <text x="416" y="334" fill="#3D3C38" font-size="13" font-weight="600" text-anchor="middle">models.py</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="config-module">
+          <rect x="466" y="304" width="76" height="50" rx="12" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1.5"/>
+          <text x="504" y="334" fill="#3D3C38" font-size="13" font-weight="600" text-anchor="middle">config.py</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="hydration-module">
+          <rect x="625" y="190" width="170" height="82" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="710" y="223" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">wiz_hydration.py</text>
+          <text x="710" y="245" fill="#5F5A54" font-size="12" text-anchor="middle">hydrate_inventory</text>
+          <text x="710" y="264" fill="#6F6C65" font-size="11" text-anchor="middle">CompositeWizContentClient</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="cache-module">
+          <rect x="620" y="310" width="82" height="56" rx="12" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1.5"/>
+          <text x="661" y="334" fill="#3D3C38" font-size="12" font-weight="600" text-anchor="middle">wiz_cache.py</text>
+          <text x="661" y="350" fill="#5F5A54" font-size="10" text-anchor="middle">cache reader</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="remote-module">
+          <rect x="718" y="310" width="82" height="56" rx="12" fill="#F0DED7" stroke="#D87858" stroke-width="1.5"/>
+          <text x="759" y="334" fill="#3D3C38" font-size="12" font-weight="600" text-anchor="middle">wiz_remote.py</text>
+          <text x="759" y="350" fill="#5F5A54" font-size="10" text-anchor="middle">remote client</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="sync-module">
+          <rect x="870" y="180" width="160" height="82" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="950" y="211" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">sync.py</text>
+          <text x="950" y="233" fill="#5F5A54" font-size="12" text-anchor="middle">load / rebuild state</text>
+          <text x="950" y="252" fill="#6F6C65" font-size="11" text-anchor="middle">plan_incremental_sync</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="exporter-module">
+          <rect x="870" y="292" width="160" height="74" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="950" y="322" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">exporter.py</text>
+          <text x="950" y="344" fill="#5F5A54" font-size="12" text-anchor="middle">write notes / assets</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="markdown-export-module">
+          <rect x="870" y="392" width="160" height="74" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="950" y="422" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">markdown_export.py</text>
+          <text x="950" y="444" fill="#5F5A54" font-size="11" text-anchor="middle">render HTML + collaboration</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="transformation" data-drawio-id="table-markdown-module">
+          <rect x="865" y="496" width="170" height="30" rx="15" fill="#E6D7B4" stroke="#BFA777" stroke-width="1.5"/>
+          <text x="950" y="515" fill="#5F5A54" font-size="11" font-weight="600" text-anchor="middle">table_markdown.py</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="audit-reporting-module">
+          <rect x="870" y="536" width="160" height="44" rx="12" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1.5"/>
+          <text x="950" y="555" fill="#3D3C38" font-size="12" font-weight="600" text-anchor="middle">content_audit.py</text>
+          <text x="950" y="571" fill="#5F5A54" font-size="11" text-anchor="middle">reporting.py</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="indexeddb-source">
+          <rect x="1145" y="160" width="180" height="74" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
+          <text x="1235" y="190" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">IndexedDB + blob</text>
+          <text x="1235" y="212" fill="#5F5A54" font-size="12" text-anchor="middle">local Wiz desktop data</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="chromium-cache-source">
+          <rect x="1145" y="281" width="180" height="74" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
+          <text x="1235" y="311" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Chromium cache</text>
+          <text x="1235" y="333" fill="#5F5A54" font-size="12" text-anchor="middle">cache snapshot hydration</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="wiz-remote-source">
+          <rect x="1145" y="402" width="180" height="90" rx="14" fill="#F0DED7" stroke="#D87858" stroke-width="2"/>
+          <text x="1235" y="432" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Wiz account + KS APIs</text>
+          <text x="1235" y="454" fill="#5F5A54" font-size="12" text-anchor="middle">note / object download</text>
+          <text x="1235" y="473" fill="#6F6C65" font-size="11" text-anchor="middle">editor websocket snapshot</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="markdown-output">
+          <rect x="350" y="697" width="170" height="72" rx="14" fill="#E0E0F0" stroke="#8585DD" stroke-width="2"/>
+          <text x="435" y="727" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Markdown tree</text>
+          <text x="435" y="749" fill="#5F5A54" font-size="12" text-anchor="middle">folder-preserving notes</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="asset-output">
+          <rect x="545" y="697" width="225" height="72" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
+          <text x="657.5" y="727" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">_wiz/resources + attachments</text>
+          <text x="657.5" y="749" fill="#5F5A54" font-size="12" text-anchor="middle">binary sidecars for notes</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="state-output">
+          <rect x="795" y="697" width="195" height="72" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
+          <text x="892.5" y="722" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">_wiz/state.json + report.json</text>
+          <text x="892.5" y="742" fill="#5F5A54" font-size="11" text-anchor="middle">content_audit.json / .md</text>
+          <text x="892.5" y="758" fill="#6F6C65" font-size="10" text-anchor="middle">incremental sync bookkeeping</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="trigger" data-drawio-id="release-tag-trigger">
+          <rect x="1085" y="615" width="112" height="64" rx="14" fill="#EDEAE3" stroke="#9A9991" stroke-width="2"/>
+          <text x="1141" y="641" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">git tag v*</text>
+          <text x="1141" y="660" fill="#5F5A54" font-size="11" text-anchor="middle">push trigger</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="release-workflow">
+          <rect x="1215" y="615" width="120" height="78" rx="14" fill="#F0DED7" stroke="#D87858" stroke-width="2"/>
+          <text x="1275" y="644" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">release.yml</text>
+          <text x="1275" y="663" fill="#5F5A54" font-size="11" text-anchor="middle">pytest + PyInstaller</text>
+          <text x="1275" y="680" fill="#6F6C65" font-size="10" text-anchor="middle">tag-only workflow</text>
+        </g>
+
+        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="release-zips">
+          <rect x="1098" y="739" width="220" height="66" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
+          <text x="1208" y="765" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">GitHub Release ZIPs</text>
+          <text x="1208" y="784" fill="#5F5A54" font-size="11" text-anchor="middle">windows / macOS / linux x64</text>
+        </g>
+
+        <text data-drawio-type="label" data-drawio-role="legend" data-drawio-id="legend-heading" data-drawio-width="70" data-drawio-height="18" x="50" y="820" fill="#3D3C38" font-size="13" font-weight="700">Legend</text>
+        <rect data-drawio-type="shape" data-drawio-role="legend-swatch" data-drawio-id="legend-neutral" x="50" y="836" width="18" height="11" rx="3" fill="#EDEAE3" stroke="#9A9991" stroke-width="1"/>
+        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-neutral-label" data-drawio-width="94" data-drawio-height="16" x="76" y="845" fill="#6F6C65" font-size="11">Entry / trigger</text>
+        <rect data-drawio-type="shape" data-drawio-role="legend-swatch" data-drawio-id="legend-backend" x="188" y="836" width="18" height="11" rx="3" fill="#D8E8D8" stroke="#76B985" stroke-width="1"/>
+        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-backend-label" data-drawio-width="90" data-drawio-height="16" x="214" y="845" fill="#6F6C65" font-size="11">Python module</text>
+        <rect data-drawio-type="shape" data-drawio-role="legend-swatch" data-drawio-id="legend-data" x="328" y="836" width="18" height="11" rx="3" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1"/>
+        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-data-label" data-drawio-width="90" data-drawio-height="16" x="354" y="845" fill="#6F6C65" font-size="11">Data / artifact</text>
+        <rect data-drawio-type="shape" data-drawio-role="legend-swatch" data-drawio-id="legend-cloud" x="470" y="836" width="18" height="11" rx="3" fill="#F0DED7" stroke="#D87858" stroke-width="1"/>
+        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-cloud-label" data-drawio-width="110" data-drawio-height="16" x="496" y="845" fill="#6F6C65" font-size="11">External / CI path</text>
+        <line data-drawio-type="edge" data-drawio-role="legend-flow" data-drawio-id="legend-primary-flow" x1="636" y1="842" x2="668" y2="842" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-primary-label" data-drawio-width="78" data-drawio-height="16" x="678" y="845" fill="#6F6C65" font-size="11">Main flow</text>
+        <path data-drawio-type="edge" data-drawio-role="legend-flow" data-drawio-id="legend-support-flow" d="M 784 842 C 796 834, 812 834, 824 842" fill="none" stroke="#BFA777" stroke-width="1.6" stroke-dasharray="5 5" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-support-label" data-drawio-width="106" data-drawio-height="16" x="838" y="845" fill="#6F6C65" font-size="11">Support / rewrite</text>
+
+        <rect data-drawio-type="shape" data-drawio-role="scope-note" data-drawio-id="scope-note-box" x="50" y="852" width="930" height="28" rx="12" fill="#F6F3EC" stroke="#C9C3B8" stroke-width="1"/>
+        <text data-drawio-type="label" data-drawio-role="scope-note" data-drawio-id="scope-note-text" data-drawio-width="900" data-drawio-height="18" x="66" y="871" fill="#6F6C65" font-size="11" font-weight="500">Scope: current repo runtime path. The release workflow is tag-only and separate from the normal sync and export execution path.</text>
+      </svg>
+    </main>
+
+    <p class="footer">Current repository structure rendered on 2026-07-04 from the latest local source tree.</p>
+  </div>
+
+  <script>
+    function closeExportMenus(exceptMenu) {
+      document.querySelectorAll('.toolbar.expanded').forEach((menu) => {
+        if (menu === exceptMenu) return;
+        menu.classList.remove('expanded', 'toolbar-flip');
+        menu.querySelector('.toolbar-toggle')?.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    function positionExportMenu(menu) {
+      const actions = menu.querySelector('.toolbar-actions');
+      menu.classList.remove('toolbar-flip');
+      if (actions.getBoundingClientRect().right > window.innerWidth - 8) {
+        menu.classList.add('toolbar-flip');
+      }
+    }
+
+    function toggleExportMenu(btn) {
+      const menu = btn.closest('.toolbar');
+      const shouldOpen = !menu.classList.contains('expanded');
+      closeExportMenus(menu);
+      menu.classList.toggle('expanded', shouldOpen);
+      btn.setAttribute('aria-expanded', String(shouldOpen));
+      if (shouldOpen) positionExportMenu(menu);
+    }
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.toolbar')) {
+        closeExportMenus();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeExportMenus();
+      }
+    });
+
+    async function captureReport() {
+      const el = document.getElementById('report-container');
+      const r = el.getBoundingClientRect();
+      const pad = 32;
+      return html2canvas(document.body, {
+        backgroundColor: '#E8E6DD',
+        scale: 2,
+        useCORS: true,
+        ignoreElements: (e) => e.classList && e.classList.contains('toolbar'),
+        x: r.left + window.scrollX - pad,
+        y: r.top + window.scrollY - pad,
+        width: r.width + pad * 2,
+        height: r.height + pad * 2
+      });
+    }
+
+    async function copyAsImage(btn) {
+      const orig = btn.textContent;
+      try {
+        const canvas = await captureReport();
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        btn.textContent = 'Copied';
+      } catch (e) {
+        btn.textContent = 'Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPNG(btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Preparing';
+      try {
+        const canvas = await captureReport();
+        const link = document.createElement('a');
+        link.download = 'diagram.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        btn.textContent = 'Done';
+      } catch (e) {
+        btn.textContent = 'Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPDF(btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Preparing';
+      try {
+        const canvas = await captureReport();
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = window.jspdf;
+        const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+        const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height], hotfixes: ['px_scaling'] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('diagram.pdf');
+        btn.textContent = 'Done';
+      } catch (e) {
+        btn.textContent = 'Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    function xmlEscape(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    }
+
+    const CLOUDY_DRAWIO_EXPORTER_VERSION = '2026.06.28.1';
+
+    function directChildren(el, tagName) {
+      return Array.from(el.children).filter((child) => child.tagName.toLowerCase() === tagName);
+    }
+
+    function directTag(el) {
+      return el.tagName.toLowerCase();
+    }
+
+    function attrNumber(el, name, fallback = 0) {
+      return numberValue(el.getAttribute(name), fallback);
+    }
+
+    function drawioId(el, index) {
+      const raw = el.dataset.drawioId || `${el.dataset.drawioType || 'cell'}-${index}`;
+      return raw.replace(/[^a-zA-Z0-9_-]/g, '-');
+    }
+
+    function cellStyle(parts) {
+      return parts.filter(Boolean).join(';') + ';';
+    }
+
+    function drawioRoleStyle(el) {
+      const role = el.dataset?.drawioRole;
+      return role ? `cloudyRole=${role.replace(/[^a-zA-Z0-9_-]/g, '-')}` : '';
+    }
+
+    function drawioIgnored(el) {
+      return el.dataset?.drawioIgnore === 'true';
+    }
+
+    function drawioNumber(value) {
+      const rounded = Math.round(Number(value) * 100) / 100;
+      return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+    }
+
+    function numberValue(value, fallback = 0) {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function svgViewBox(svg) {
+      const values = (svg.getAttribute('viewBox') || '0 0 1000 620')
+        .split(/\s+/)
+        .map((value) => Number(value));
+      return {
+        x: Number.isFinite(values[0]) ? values[0] : 0,
+        y: Number.isFinite(values[1]) ? values[1] : 0,
+        width: Number.isFinite(values[2]) ? values[2] : 1000,
+        height: Number.isFinite(values[3]) ? values[3] : 620
+      };
+    }
+
+    function drawioIgnoreOwner(el) {
+      let node = el;
+      while (node && directTag(node) !== 'svg') {
+        if (drawioIgnored(node)) return node;
+        node = node.parentElement;
+      }
+      return null;
+    }
+
+    function drawioIgnoreReason(el) {
+      return (el.dataset?.drawioIgnoreReason || '').trim();
+    }
+
+    function inlineStyleValue(el, property) {
+      const style = el.getAttribute('style') || '';
+      const prefix = `${property}:`;
+      return style
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part.toLowerCase().startsWith(prefix))
+        ?.slice(prefix.length)
+        .trim() || '';
+    }
+
+    function attrOrStyle(el, name, fallback = '') {
+      return el.getAttribute(name) || inlineStyleValue(el, name) || fallback;
+    }
+
+    function inNonRenderingSvgContainer(el) {
+      let node = el.parentElement;
+      while (node) {
+        const tag = directTag(node);
+        if (['defs', 'marker', 'clipPath', 'mask', 'pattern', 'symbol', 'title', 'desc', 'script', 'style'].includes(tag)) {
+          return true;
+        }
+        node = node.parentElement;
+      }
+      return false;
+    }
+
+    function visuallyHidden(el) {
+      const display = attrOrStyle(el, 'display').toLowerCase();
+      const visibility = attrOrStyle(el, 'visibility').toLowerCase();
+      const opacity = numberValue(attrOrStyle(el, 'opacity'), 1);
+      return display === 'none' || visibility === 'hidden' || opacity <= 0;
+    }
+
+    function hasVisibleFill(el) {
+      const fill = attrOrStyle(el, 'fill', 'black').toLowerCase();
+      const fillOpacity = numberValue(attrOrStyle(el, 'fill-opacity'), 1);
+      return fill !== 'none' && fillOpacity > 0;
+    }
+
+    function hasVisibleStroke(el) {
+      const stroke = attrOrStyle(el, 'stroke', 'none').toLowerCase();
+      const strokeOpacity = numberValue(attrOrStyle(el, 'stroke-opacity'), 1);
+      const strokeWidth = numberValue(attrOrStyle(el, 'stroke-width'), 1);
+      return stroke !== 'none' && strokeOpacity > 0 && strokeWidth > 0;
+    }
+
+    function hasVisiblePaint(el) {
+      return hasVisibleFill(el) || hasVisibleStroke(el);
+    }
+
+    function isMeaningfulVisibleSvgElement(el) {
+      if (inNonRenderingSvgContainer(el) || visuallyHidden(el)) return false;
+
+      const tag = directTag(el);
+      if (tag === 'text') return Boolean(el.textContent.trim());
+      if (tag === 'rect') return attrNumber(el, 'width') > 0 && attrNumber(el, 'height') > 0 && hasVisiblePaint(el);
+      if (tag === 'circle') return attrNumber(el, 'r') > 0 && hasVisiblePaint(el);
+      if (tag === 'ellipse') return attrNumber(el, 'rx') > 0 && attrNumber(el, 'ry') > 0 && hasVisiblePaint(el);
+      if (tag === 'line') {
+        return hasVisibleStroke(el)
+          && (attrNumber(el, 'x1') !== attrNumber(el, 'x2') || attrNumber(el, 'y1') !== attrNumber(el, 'y2'));
+      }
+      if (tag === 'path') return Boolean((el.getAttribute('d') || '').trim()) && hasVisiblePaint(el);
+      if (tag === 'polyline' || tag === 'polygon') return Boolean((el.getAttribute('points') || '').trim()) && hasVisiblePaint(el);
+      return false;
+    }
+
+    function rectBounds(rect) {
+      return {
+        x: attrNumber(rect, 'x'),
+        y: attrNumber(rect, 'y'),
+        width: attrNumber(rect, 'width'),
+        height: attrNumber(rect, 'height')
+      };
+    }
+
+    function pointInsideBounds(x, y, bounds) {
+      return x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height;
+    }
+
+    function rectInsideBounds(rect, bounds) {
+      const inner = rectBounds(rect);
+      return inner.x >= bounds.x
+        && inner.y >= bounds.y
+        && inner.x + inner.width <= bounds.x + bounds.width
+        && inner.y + inner.height <= bounds.y + bounds.height;
+    }
+
+    function enclosingDrawioType(el) {
+      const annotated = el.dataset?.drawioType ? el : el.closest?.('[data-drawio-type]');
+      return annotated?.dataset?.drawioType || '';
+    }
+
+    function standaloneDrawioAnnotation(el) {
+      const type = enclosingDrawioType(el);
+      return Boolean(type && type !== 'component' && type !== 'boundary');
+    }
+
+    function visibleTextChildren(el) {
+      const texts = directTag(el) === 'text' ? [el] : directChildren(el, 'text');
+      return texts
+        .filter((text) => text.textContent.trim())
+        .filter((text) => !visuallyHidden(text));
+    }
+
+    function visibleLabelRowsForAnnotation(el, svg) {
+      const type = el.dataset?.drawioType || '';
+      if (type === 'label' || type === 'edge') return drawioLabelRowsFromTexts(visibleTextChildren(el));
+
+      if (type === 'component' || type === 'boundary') {
+        const directRows = drawioLabelRowsFromTexts(visibleTextChildren(el).filter((text) => !standaloneDrawioAnnotation(text)));
+        if (directRows.length) return directRows;
+
+        const rect = firstDrawioShape(el, ['rect']);
+        if (!rect || !svg) return [];
+        return drawioLabelRowsFromTexts(textsInsideRect(svg, rect, type));
+      }
+
+      return [];
+    }
+
+    function labelMismatchWarnings(svg) {
+      return Array.from(svg.querySelectorAll('[data-drawio-type]'))
+        .filter((el) => !drawioIgnored(el))
+        .flatMap((el) => {
+          const visibleRows = visibleLabelRowsForAnnotation(el, svg);
+          const warnings = [];
+          const id = drawioId(el, 'annotation');
+          if (el.dataset.drawioLabel && visibleRows[0]?.label && el.dataset.drawioLabel !== visibleRows[0].label) {
+            warnings.push(`Draw.io label mismatch on ${id}: data-drawio-label="${el.dataset.drawioLabel}" differs from visible SVG text "${visibleRows[0].label}". Use data-drawio-note or aria-label for non-visible notes.`);
+          }
+          if (el.dataset.drawioSublabel && visibleRows[1]?.label && el.dataset.drawioSublabel !== visibleRows[1].label) {
+            warnings.push(`Draw.io label mismatch on ${id}: data-drawio-sublabel="${el.dataset.drawioSublabel}" differs from visible SVG text "${visibleRows[1].label}". Use data-drawio-note or aria-label for non-visible notes.`);
+          }
+          return warnings;
+        });
+    }
+
+    function drawioPrimitiveElements(svg) {
+      return ['rect', 'circle', 'ellipse', 'line', 'path', 'polyline', 'polygon', 'text']
+        .flatMap((tagName) => Array.from(svg.querySelectorAll(tagName)));
+    }
+
+    function drawioBoxAnnotations(svg) {
+      return Array.from(svg.querySelectorAll('[data-drawio-type]'))
+        .filter((el) => !drawioIgnored(el))
+        .filter((el) => el.dataset.drawioType === 'component' || el.dataset.drawioType === 'boundary');
+    }
+
+    function textCoveredByBoxAnnotation(text, svg) {
+      const textX = attrNumber(text, 'x');
+      const textY = attrNumber(text, 'y');
+      return drawioBoxAnnotations(svg).some((box) => {
+        const rect = firstDrawioShape(box, ['rect']);
+        if (!rect) return false;
+        const bounds = rectBounds(rect);
+        if (!pointInsideBounds(textX, textY, bounds)) return false;
+        return box.dataset.drawioType === 'component' || textY <= bounds.y + Math.min(54, bounds.height);
+      });
+    }
+
+    function rectCoveredByComponentAnnotation(rect, svg) {
+      return drawioBoxAnnotations(svg)
+        .filter((box) => box.dataset.drawioType === 'component')
+        .some((box) => {
+          const boxRect = firstDrawioShape(box, ['rect']);
+          return boxRect && boxRect !== rect && rectInsideBounds(rect, rectBounds(boxRect));
+        });
+    }
+
+    function textCoveredByDrawioDataLabel(text, svg) {
+      const label = text.textContent.trim();
+      if (!label) return false;
+      return Array.from(svg.querySelectorAll('[data-drawio-type]'))
+        .filter((el) => !drawioIgnored(el))
+        .some((el) => el.dataset.drawioLabel === label || el.dataset.drawioSublabel === label);
+    }
+
+    function hasDrawioCoverage(el, svg) {
+      if (el.dataset?.drawioType) return true;
+      const annotatedParent = el.closest?.('[data-drawio-type]');
+      if (annotatedParent && !drawioIgnored(annotatedParent)) return true;
+
+      const tag = directTag(el);
+      if (tag === 'text') return textCoveredByBoxAnnotation(el, svg) || textCoveredByDrawioDataLabel(el, svg);
+      if (tag === 'rect') return rectCoveredByComponentAnnotation(el, svg);
+      return false;
+    }
+
+    function describeSvgElement(el) {
+      const tag = directTag(el);
+      const id = el.dataset?.drawioId || el.getAttribute('id') || '';
+      const suffix = tag === 'text' ? ` "${el.textContent.trim()}"` : (id ? ` #${id}` : '');
+      return `<${tag}${suffix}>`;
+    }
+
+    function auditDrawioCoverage(svg) {
+      const warnings = [
+        ...labelMismatchWarnings(svg),
+        ...drawioPrimitiveElements(svg)
+        .filter(isMeaningfulVisibleSvgElement)
+        .map((el) => {
+          const ignoreOwner = drawioIgnoreOwner(el);
+          if (ignoreOwner) {
+            if (drawioIgnoreReason(ignoreOwner)) return '';
+            return `Draw.io coverage ignore missing data-drawio-ignore-reason: ${describeSvgElement(ignoreOwner)}.`;
+          }
+          if (hasDrawioCoverage(el, svg)) return '';
+          return `Draw.io coverage gap: ${describeSvgElement(el)} is visible in the SVG sheet but has no data-drawio-type coverage and is not explicitly ignored.`;
+        })
+        .filter(Boolean)
+      ];
+      return Array.from(new Set(warnings));
+    }
+
+    function internalRectsInsideBox(svg, rect) {
+      const bounds = rectBounds(rect);
+      return Array.from(svg.querySelectorAll('rect'))
+        .filter((candidate) => candidate !== rect)
+        .filter((candidate) => !candidate.dataset.drawioType)
+        .filter((candidate) => !standaloneDrawioAnnotation(candidate))
+        .filter((candidate) => rectInsideBounds(candidate, bounds));
+    }
+
+    function internalTextsInsideBox(svg, rect) {
+      const bounds = rectBounds(rect);
+      return Array.from(svg.querySelectorAll('text'))
+        .filter((text) => text.textContent.trim())
+        .filter((text) => !standaloneDrawioAnnotation(text))
+        .filter((text) => pointInsideBounds(attrNumber(text, 'x'), attrNumber(text, 'y'), bounds))
+        .sort((a, b) => attrNumber(a, 'y') - attrNumber(b, 'y') || attrNumber(a, 'x') - attrNumber(b, 'x'));
+    }
+
+    function internalPrimitivesForBox(el, rect) {
+      if (el.dataset.drawioType !== 'component') return { rects: [], texts: [] };
+      const svg = el.ownerSVGElement || el.closest('svg');
+      if (!svg) return { rects: [], texts: [] };
+      return {
+        rects: internalRectsInsideBox(svg, rect),
+        texts: internalTextsInsideBox(svg, rect)
+      };
+    }
+
+    function drawioLabelRowsFromData(el) {
+      if (!el.dataset.drawioLabel) return null;
+      const rows = [{
+        label: el.dataset.drawioLabel,
+        color: el.dataset.drawioLabelColor || '#3D3C38',
+        fontSize: el.dataset.drawioLabelSize || '15',
+        fontWeight: el.dataset.drawioLabelWeight || '600'
+      }];
+      if (el.dataset.drawioSublabel) {
+        rows.push({
+          label: el.dataset.drawioSublabel,
+          color: el.dataset.drawioSublabelColor || '#5F5A54',
+          fontSize: el.dataset.drawioSublabelSize || '12',
+          fontWeight: el.dataset.drawioSublabelWeight || '400'
+        });
+      }
+      return rows;
+    }
+
+    function drawioLabelRowsFromTexts(texts) {
+      return texts.map((text, index) => ({
+        label: text.textContent.trim(),
+        color: text.getAttribute('fill') || (index === 0 ? '#3D3C38' : '#5F5A54'),
+        fontSize: text.getAttribute('font-size') || (index === 0 ? '15' : '12'),
+        fontWeight: text.getAttribute('font-weight') || (index === 0 ? '600' : '400')
+      }));
+    }
+
+    function textsInsideRect(svg, rect, type) {
+      const x = attrNumber(rect, 'x');
+      const y = attrNumber(rect, 'y');
+      const width = attrNumber(rect, 'width');
+      const height = attrNumber(rect, 'height');
+      const bottom = type === 'boundary' ? y + Math.min(54, height) : y + height;
+      return Array.from(svg.querySelectorAll('text'))
+        .filter((text) => !standaloneDrawioAnnotation(text))
+        .filter((text) => {
+          const tx = attrNumber(text, 'x');
+          const ty = attrNumber(text, 'y');
+          return tx >= x && tx <= x + width && ty >= y && ty <= bottom;
+        })
+        .sort((a, b) => attrNumber(a, 'y') - attrNumber(b, 'y'));
+    }
+
+    function drawioLabelFromRows(rows) {
+      if (!rows.length) return '';
+      const htmlRows = rows.map((row) => {
+        const label = xmlEscape(row.label);
+        return `<div style="font-size:${row.fontSize}px;color:${row.color};font-weight:${row.fontWeight};line-height:1.25;">${label}</div>`;
+      });
+      return htmlRows.join('');
+    }
+
+    function drawioLabelForBox(el, rect) {
+      if (internalPrimitivesForBox(el, rect).texts.length) return '';
+
+      const svg = el.ownerSVGElement || el.closest('svg');
+      const visibleRows = visibleLabelRowsForAnnotation(el, svg);
+      if (visibleRows.length) return drawioLabelFromRows(visibleRows);
+
+      const textChildren = directChildren(el, 'text').filter((text) => !standaloneDrawioAnnotation(text));
+      if (textChildren.length) return drawioLabelFromRows(drawioLabelRowsFromTexts(textChildren));
+
+      const textRows = svg ? drawioLabelRowsFromTexts(textsInsideRect(svg, rect, el.dataset.drawioType)) : [];
+      if (textRows.length) return drawioLabelFromRows(textRows);
+
+      const rowsFromData = drawioLabelRowsFromData(el);
+      return rowsFromData ? drawioLabelFromRows(rowsFromData) : '';
+    }
+
+    function firstDrawioShape(el, tagNames) {
+      if (tagNames.includes(directTag(el))) return el;
+      for (const tagName of tagNames) {
+        const child = directChildren(el, tagName)[0];
+        if (child) return child;
+      }
+      return null;
+    }
+
+    function semanticContainerRoles() {
+      return new Set(['card', 'panel', 'callout']);
+    }
+
+    function semanticContainerRole(el) {
+      return semanticContainerRoles().has(el.dataset.drawioRole || '');
+    }
+
+    function drawioDashStyle(el) {
+      const dashArray = (el.getAttribute('stroke-dasharray') || '').replace(/,/g, ' ').trim();
+      if (!dashArray || dashArray === 'none') return [];
+
+      const values = dashArray.split(/\s+/)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0);
+      if (!values.length) return [];
+
+      const strokeWidth = Math.max(numberValue(el.getAttribute('stroke-width'), 1), 0.1);
+      const pattern = values
+        .map((value) => drawioNumber(value / strokeWidth))
+        .join(' ');
+
+      return ['dashed=1', 'fixDash=1', `dashPattern=${pattern}`];
+    }
+
+    function buildInternalRectCell(rect, id, parentId = '1', origin = { x: 0, y: 0 }) {
+      const bounds = rectBounds(rect);
+      const fill = rect.getAttribute('fill') || 'none';
+      const stroke = rect.getAttribute('stroke') || 'none';
+      const strokeWidth = rect.getAttribute('stroke-width') || '1';
+      const rx = attrNumber(rect, 'rx', 0);
+      const rounded = rx > 0;
+      const style = cellStyle([
+        rounded ? 'rounded=1' : 'rounded=0',
+        'whiteSpace=wrap',
+        'html=1',
+        'shadow=0',
+        rounded ? 'absoluteArcSize=1' : '',
+        rounded ? `arcSize=${Math.max(6, Math.round(rx * 2))}` : '',
+        `fillColor=${fill}`,
+        `strokeColor=${stroke}`,
+        `strokeWidth=${strokeWidth}`,
+        ...drawioDashStyle(rect),
+        drawioRoleStyle(rect)
+      ]);
+
+      return `<mxCell id="${xmlEscape(id)}" value="" style="${xmlEscape(style)}" vertex="1" parent="${xmlEscape(parentId)}"><mxGeometry x="${drawioNumber(bounds.x - origin.x)}" y="${drawioNumber(bounds.y - origin.y)}" width="${drawioNumber(bounds.width)}" height="${drawioNumber(bounds.height)}" as="geometry"/></mxCell>`;
+    }
+
+    function textAlignFromAnchor(text) {
+      const anchor = text.getAttribute('text-anchor') || 'start';
+      if (anchor === 'middle') return 'center';
+      if (anchor === 'end') return 'right';
+      return 'left';
+    }
+
+    function fontStyleValueFromWeight(weight) {
+      const normalized = String(weight || '').toLowerCase();
+      const numericWeight = Number.parseInt(normalized, 10);
+      return normalized === 'bold' || numericWeight >= 600 ? '1' : '0';
+    }
+
+    function fontStyleFromWeight(text) {
+      return fontStyleValueFromWeight(text.getAttribute('font-weight') || '');
+    }
+
+    function textCellBounds(text, containerRect, innerRects) {
+      const textX = attrNumber(text, 'x');
+      const textY = attrNumber(text, 'y');
+      const fontSize = attrNumber(text, 'font-size', 12);
+      const matchingRect = innerRects
+        .map((innerRect) => ({ rect: innerRect, bounds: rectBounds(innerRect) }))
+        .filter(({ bounds }) => pointInsideBounds(textX, textY, bounds))
+        .sort((a, b) => (a.bounds.width * a.bounds.height) - (b.bounds.width * b.bounds.height))[0];
+
+      if (matchingRect) return matchingRect.bounds;
+
+      const container = rectBounds(containerRect);
+      const height = Math.ceil(fontSize * 1.35);
+      const align = textAlignFromAnchor(text);
+      const inset = Math.max(0, Math.min(textX - container.x, container.x + container.width - textX));
+      const width = align === 'center' ? container.width : Math.max(fontSize * 3, container.width - inset * 2);
+      const x = align === 'center' ? textX - width / 2 : align === 'right' ? textX - width : textX;
+      return {
+        x: Math.max(container.x, Math.min(x, container.x + container.width - width)),
+        y: textY - fontSize,
+        width,
+        height
+      };
+    }
+
+    function buildInternalTextCell(text, id, containerRect, innerRects, parentId = '1', origin = { x: 0, y: 0 }) {
+      const bounds = textCellBounds(text, containerRect, innerRects);
+      const fontSize = text.getAttribute('font-size') || '12';
+      const fill = text.getAttribute('fill') || (fontStyleFromWeight(text) === '1' ? '#3D3C38' : '#5F5A54');
+      const style = cellStyle([
+        'text',
+        'html=1',
+        'strokeColor=none',
+        'fillColor=none',
+        'rounded=0',
+        'whiteSpace=wrap',
+        'fontFamily=Montserrat',
+        `fontSize=${fontSize}`,
+        `fontColor=${fill}`,
+        `fontStyle=${fontStyleFromWeight(text)}`,
+        `align=${textAlignFromAnchor(text)}`,
+        'verticalAlign=middle',
+        'spacing=0',
+        drawioRoleStyle(text)
+      ]);
+      const label = xmlEscape(text.textContent.trim());
+
+      return `<mxCell id="${xmlEscape(id)}" value="${label}" style="${xmlEscape(style)}" vertex="1" parent="${xmlEscape(parentId)}"><mxGeometry x="${drawioNumber(bounds.x - origin.x)}" y="${drawioNumber(bounds.y - origin.y)}" width="${drawioNumber(bounds.width)}" height="${drawioNumber(bounds.height)}" as="geometry"/></mxCell>`;
+    }
+
+    function buildInternalPrimitiveCells(el, rect, parentId, pageOrigin = { x: 0, y: 0 }) {
+      const primitives = internalPrimitivesForBox(el, rect);
+      const grouped = semanticContainerRole(el);
+      const primitiveParentId = grouped ? parentId : '1';
+      const origin = grouped ? rectBounds(rect) : pageOrigin;
+      return [
+        ...primitives.rects.map((innerRect, index) => buildInternalRectCell(innerRect, `${parentId}-inner-rect-${index}`, primitiveParentId, origin)),
+        ...primitives.texts.map((text, index) => buildInternalTextCell(text, `${parentId}-inner-text-${index}`, rect, primitives.rects, primitiveParentId, origin))
+      ];
+    }
+
+    function buildLabelCell(el, index, origin = { x: 0, y: 0 }) {
+      const text = directTag(el) === 'text' ? el : directChildren(el, 'text')[0];
+      if (!text) return '';
+
+      const labelText = text.textContent.trim() || el.dataset.drawioLabel || '';
+      if (!labelText) return '';
+
+      const fontSize = numberValue(el.dataset.drawioLabelSize || text.getAttribute('font-size'), 12);
+      const fontWeight = el.dataset.drawioLabelWeight || text.getAttribute('font-weight') || '400';
+      const align = textAlignFromAnchor(text);
+      const estimatedWidth = Math.max(fontSize * 3, labelText.length * fontSize * 0.62);
+      const width = numberValue(el.dataset.drawioWidth, estimatedWidth);
+      const height = numberValue(el.dataset.drawioHeight, fontSize * 1.45);
+      const textX = attrNumber(text, 'x');
+      const textY = attrNumber(text, 'y');
+      let x = numberValue(el.dataset.drawioX, textX);
+      if (!('drawioX' in el.dataset)) {
+        if (align === 'center') x -= width / 2;
+        if (align === 'right') x -= width;
+      }
+      const y = numberValue(el.dataset.drawioY, textY - fontSize);
+      const color = el.dataset.drawioLabelColor || text.getAttribute('fill') || '#3D3C38';
+      const id = drawioId(el, index);
+      const style = cellStyle([
+        'text',
+        'html=1',
+        'strokeColor=none',
+        'fillColor=none',
+        'whiteSpace=wrap',
+        'rounded=0',
+        `align=${align}`,
+        'verticalAlign=middle',
+        'fontFamily=Montserrat',
+        `fontSize=${fontSize}`,
+        `fontColor=${color}`,
+        `fontStyle=${fontStyleValueFromWeight(fontWeight)}`,
+        drawioRoleStyle(el)
+      ]);
+
+      return `<mxCell id="${xmlEscape(id)}" value="${xmlEscape(labelText)}" style="${xmlEscape(style)}" vertex="1" parent="1"><mxGeometry x="${drawioNumber(x - origin.x)}" y="${drawioNumber(y - origin.y)}" width="${drawioNumber(width)}" height="${drawioNumber(height)}" as="geometry"/></mxCell>`;
+    }
+
+    function shapeBounds(shape) {
+      const tag = directTag(shape);
+      if (tag === 'circle') {
+        const r = attrNumber(shape, 'r');
+        return { x: attrNumber(shape, 'cx') - r, y: attrNumber(shape, 'cy') - r, width: r * 2, height: r * 2 };
+      }
+      if (tag === 'ellipse') {
+        const rx = attrNumber(shape, 'rx');
+        const ry = attrNumber(shape, 'ry');
+        return { x: attrNumber(shape, 'cx') - rx, y: attrNumber(shape, 'cy') - ry, width: rx * 2, height: ry * 2 };
+      }
+      return rectBounds(shape);
+    }
+
+    function buildShapeCell(el, index, origin = { x: 0, y: 0 }) {
+      const shape = firstDrawioShape(el, ['rect', 'circle', 'ellipse']);
+      if (!shape) return '';
+
+      const tag = directTag(shape);
+      const bounds = shapeBounds(shape);
+      const rx = attrNumber(shape, 'rx', 0);
+      const fill = shape.getAttribute('fill') || 'none';
+      const stroke = shape.getAttribute('stroke') || 'none';
+      const strokeWidth = shape.getAttribute('stroke-width') || '1';
+      const id = drawioId(el, index);
+      const style = cellStyle([
+        tag === 'circle' || tag === 'ellipse' ? 'ellipse' : (rx > 0 ? 'rounded=1' : 'rounded=0'),
+        'whiteSpace=wrap',
+        'html=1',
+        'shadow=0',
+        tag === 'rect' ? 'absoluteArcSize=1' : '',
+        tag === 'rect' ? `arcSize=${Math.max(0, Math.round(rx * 2))}` : '',
+        `fillColor=${fill}`,
+        `strokeColor=${stroke}`,
+        `strokeWidth=${strokeWidth}`,
+        ...drawioDashStyle(shape),
+        drawioRoleStyle(el)
+      ]);
+
+      return `<mxCell id="${xmlEscape(id)}" value="" style="${xmlEscape(style)}" vertex="1" parent="1"><mxGeometry x="${drawioNumber(bounds.x - origin.x)}" y="${drawioNumber(bounds.y - origin.y)}" width="${drawioNumber(bounds.width)}" height="${drawioNumber(bounds.height)}" as="geometry"/></mxCell>`;
+    }
+
+    function buildBoxCell(el, index, origin = { x: 0, y: 0 }) {
+      const rect = firstDrawioShape(el, ['rect']);
+      if (!rect) return '';
+
+      const type = el.dataset.drawioType;
+      const fill = rect.getAttribute('fill') || 'none';
+      const stroke = rect.getAttribute('stroke') || '#9A9991';
+      const strokeWidth = rect.getAttribute('stroke-width') || '1.5';
+      const rx = attrNumber(rect, 'rx', 0);
+      const label = drawioLabelForBox(el, rect);
+      const baseStyle = [
+        'rounded=1',
+        'whiteSpace=wrap',
+        'html=1',
+        'shadow=0',
+        'fontFamily=Montserrat',
+        'absoluteArcSize=1',
+        `arcSize=${Math.max(6, Math.round(rx * 2))}`,
+        `fillColor=${fill}`,
+        `strokeColor=${stroke}`,
+        `strokeWidth=${strokeWidth}`,
+        ...drawioDashStyle(rect),
+        drawioRoleStyle(el)
+      ];
+
+      const typeStyle = type === 'boundary'
+        ? ['container=1', 'collapsible=0', 'recursiveResize=0', 'align=left', 'verticalAlign=top', 'spacingLeft=18', 'spacingTop=10', 'fontColor=#6F6C65', 'fontSize=13', 'fontStyle=1']
+        : semanticContainerRole(el)
+          ? ['container=1', 'collapsible=0', 'recursiveResize=0', 'align=left', 'verticalAlign=top', 'spacing=8', 'fontColor=#3D3C38', 'fontSize=13']
+        : ['align=center', 'verticalAlign=middle', 'spacing=8', 'fontColor=#3D3C38', 'fontSize=15'];
+
+      const id = drawioId(el, index);
+      const style = cellStyle([...baseStyle, ...typeStyle]);
+      const x = attrNumber(rect, 'x');
+      const y = attrNumber(rect, 'y');
+      const width = attrNumber(rect, 'width');
+      const height = attrNumber(rect, 'height');
+
+      return `<mxCell id="${xmlEscape(id)}" value="${xmlEscape(label)}" style="${xmlEscape(style)}" vertex="1" parent="1"><mxGeometry x="${drawioNumber(x - origin.x)}" y="${drawioNumber(y - origin.y)}" width="${width}" height="${height}" as="geometry"/></mxCell>`;
+    }
+
+    const CURVE_SAMPLE_STEPS = 8;
+
+    function isPathCommand(token) {
+      return /^[a-zA-Z]$/.test(token);
+    }
+
+    function pathTokens(pathData) {
+      return pathData.match(/[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
+    }
+
+    function addPathPoint(points, point) {
+      if (Number.isFinite(point.x) && Number.isFinite(point.y)) points.push(point);
+    }
+
+    function pathPoint(x, y, current, relative) {
+      return {
+        x: relative ? current.x + x : x,
+        y: relative ? current.y + y : y
+      };
+    }
+
+    function reflectPathPoint(point, around) {
+      return {
+        x: around.x * 2 - point.x,
+        y: around.y * 2 - point.y
+      };
+    }
+
+    function cubicBezierPoint(start, controlA, controlB, end, t) {
+      const mt = 1 - t;
+      return {
+        x: mt ** 3 * start.x + 3 * mt ** 2 * t * controlA.x + 3 * mt * t ** 2 * controlB.x + t ** 3 * end.x,
+        y: mt ** 3 * start.y + 3 * mt ** 2 * t * controlA.y + 3 * mt * t ** 2 * controlB.y + t ** 3 * end.y
+      };
+    }
+
+    function quadraticBezierPoint(start, control, end, t) {
+      const mt = 1 - t;
+      return {
+        x: mt ** 2 * start.x + 2 * mt * t * control.x + t ** 2 * end.x,
+        y: mt ** 2 * start.y + 2 * mt * t * control.y + t ** 2 * end.y
+      };
+    }
+
+    function sampleCurve(points, pointAt) {
+      for (let step = 1; step <= CURVE_SAMPLE_STEPS; step += 1) {
+        addPathPoint(points, pointAt(step / CURVE_SAMPLE_STEPS));
+      }
+    }
+
+    function pointsFromPathData(pathData) {
+      const tokens = pathTokens(pathData);
+      const points = [];
+      let index = 0;
+      let command = '';
+      let current = { x: 0, y: 0 };
+      let subpathStart = current;
+      let lastCubicControl = null;
+      let lastQuadraticControl = null;
+
+      const hasNumber = () => index < tokens.length && !isPathCommand(tokens[index]);
+      const readNumber = () => Number(tokens[index++]);
+
+      while (index < tokens.length) {
+        if (isPathCommand(tokens[index])) command = tokens[index++];
+        if (!command) break;
+
+        const upper = command.toUpperCase();
+        const relative = command !== upper;
+
+        if (upper === 'M') {
+          let first = true;
+          while (hasNumber()) {
+            const point = pathPoint(readNumber(), readNumber(), current, relative);
+            current = point;
+            if (first) subpathStart = point;
+            addPathPoint(points, point);
+            first = false;
+          }
+          command = relative ? 'l' : 'L';
+          lastCubicControl = null;
+          lastQuadraticControl = null;
+          continue;
+        }
+
+        if (upper === 'L') {
+          while (hasNumber()) {
+            current = pathPoint(readNumber(), readNumber(), current, relative);
+            addPathPoint(points, current);
+          }
+          lastCubicControl = null;
+          lastQuadraticControl = null;
+          continue;
+        }
+
+        if (upper === 'H') {
+          while (hasNumber()) {
+            const x = readNumber();
+            current = { x: relative ? current.x + x : x, y: current.y };
+            addPathPoint(points, current);
+          }
+          lastCubicControl = null;
+          lastQuadraticControl = null;
+          continue;
+        }
+
+        if (upper === 'V') {
+          while (hasNumber()) {
+            const y = readNumber();
+            current = { x: current.x, y: relative ? current.y + y : y };
+            addPathPoint(points, current);
+          }
+          lastCubicControl = null;
+          lastQuadraticControl = null;
+          continue;
+        }
+
+        if (upper === 'C') {
+          while (hasNumber()) {
+            const start = current;
+            const controlA = pathPoint(readNumber(), readNumber(), current, relative);
+            const controlB = pathPoint(readNumber(), readNumber(), current, relative);
+            const end = pathPoint(readNumber(), readNumber(), current, relative);
+            sampleCurve(points, (t) => cubicBezierPoint(start, controlA, controlB, end, t));
+            current = end;
+            lastCubicControl = controlB;
+            lastQuadraticControl = null;
+          }
+          continue;
+        }
+
+        if (upper === 'S') {
+          while (hasNumber()) {
+            const start = current;
+            const controlA = lastCubicControl ? reflectPathPoint(lastCubicControl, current) : current;
+            const controlB = pathPoint(readNumber(), readNumber(), current, relative);
+            const end = pathPoint(readNumber(), readNumber(), current, relative);
+            sampleCurve(points, (t) => cubicBezierPoint(start, controlA, controlB, end, t));
+            current = end;
+            lastCubicControl = controlB;
+            lastQuadraticControl = null;
+          }
+          continue;
+        }
+
+        if (upper === 'Q') {
+          while (hasNumber()) {
+            const start = current;
+            const control = pathPoint(readNumber(), readNumber(), current, relative);
+            const end = pathPoint(readNumber(), readNumber(), current, relative);
+            sampleCurve(points, (t) => quadraticBezierPoint(start, control, end, t));
+            current = end;
+            lastQuadraticControl = control;
+            lastCubicControl = null;
+          }
+          continue;
+        }
+
+        if (upper === 'T') {
+          while (hasNumber()) {
+            const start = current;
+            const control = lastQuadraticControl ? reflectPathPoint(lastQuadraticControl, current) : current;
+            const end = pathPoint(readNumber(), readNumber(), current, relative);
+            sampleCurve(points, (t) => quadraticBezierPoint(start, control, end, t));
+            current = end;
+            lastQuadraticControl = control;
+            lastCubicControl = null;
+          }
+          continue;
+        }
+
+        if (upper === 'A') {
+          while (hasNumber()) {
+            readNumber();
+            readNumber();
+            readNumber();
+            readNumber();
+            readNumber();
+            current = pathPoint(readNumber(), readNumber(), current, relative);
+            addPathPoint(points, current);
+          }
+          lastCubicControl = null;
+          lastQuadraticControl = null;
+          continue;
+        }
+
+        if (upper === 'Z') {
+          current = subpathStart;
+          addPathPoint(points, current);
+          lastCubicControl = null;
+          lastQuadraticControl = null;
+          continue;
+        }
+
+        break;
+      }
+
+      return points;
+    }
+
+    function pointsFromShape(shape) {
+      const tag = directTag(shape);
+      if (tag === 'line') {
+        return [
+          { x: attrNumber(shape, 'x1'), y: attrNumber(shape, 'y1') },
+          { x: attrNumber(shape, 'x2'), y: attrNumber(shape, 'y2') }
+        ];
+      }
+
+      if (tag === 'polyline') {
+        return (shape.getAttribute('points') || '')
+          .trim()
+          .split(/\s+/)
+          .map((pair) => pair.split(',').map(Number))
+          .filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y))
+          .map(([x, y]) => ({ x, y }));
+      }
+
+      if (tag === 'path') return pointsFromPathData(shape.getAttribute('d') || '');
+
+      return [];
+    }
+
+    function shapeUsesCurveCommand(shape) {
+      return directTag(shape) === 'path' && /[CQSTcqst]/.test(shape.getAttribute('d') || '');
+    }
+
+    function edgeMarkerStyle(shape) {
+      const hasStartMarker = shape.hasAttribute('marker-start');
+      const hasEndMarker = shape.hasAttribute('marker-end');
+      return [
+        hasStartMarker ? 'startArrow=open' : 'startArrow=none',
+        hasStartMarker ? 'startFill=0' : '',
+        hasEndMarker ? 'endArrow=open' : 'endArrow=none',
+        hasEndMarker ? 'endFill=0' : ''
+      ];
+    }
+
+    function edgeTerminalAttributes(el) {
+      const source = (el.dataset.drawioSource || '').trim();
+      const target = (el.dataset.drawioTarget || '').trim();
+      const connect = (el.dataset.drawioConnect || '').trim().toLowerCase() === 'true';
+      const attrs = [];
+
+      if (source) attrs.push(`data-drawio-source="${xmlEscape(source)}"`);
+      if (target) attrs.push(`data-drawio-target="${xmlEscape(target)}"`);
+      if (connect && source) attrs.push(`source="${xmlEscape(source)}"`);
+      if (connect && target) attrs.push(`target="${xmlEscape(target)}"`);
+
+      return attrs.length ? ` ${attrs.join(' ')}` : '';
+    }
+
+    function edgeLabelTextElement(el, shape) {
+      const directText = visibleTextChildren(el)[0];
+      if (directText) return directText;
+
+      const label = (el.dataset.drawioLabel || '').trim();
+      if (!label) return null;
+
+      const svg = el.ownerSVGElement || el.closest('svg');
+      if (!svg) return null;
+
+      const points = pointsFromShape(shape);
+      if (points.length < 2) return null;
+
+      const mid = {
+        x: (points[0].x + points[points.length - 1].x) / 2,
+        y: (points[0].y + points[points.length - 1].y) / 2
+      };
+
+      return Array.from(svg.querySelectorAll('text'))
+        .filter((text) => !text.dataset.drawioType)
+        .filter((text) => !text.closest?.('[data-drawio-type]'))
+        .filter((text) => text.textContent.trim() === label)
+        .sort((a, b) => {
+          const da = (attrNumber(a, 'x') - mid.x) ** 2 + (attrNumber(a, 'y') - mid.y) ** 2;
+          const db = (attrNumber(b, 'x') - mid.x) ** 2 + (attrNumber(b, 'y') - mid.y) ** 2;
+          return da - db;
+        })[0] || null;
+    }
+
+    function buildEdgeLabelCell(el, edgeId, text, origin = { x: 0, y: 0 }) {
+      const labelText = text?.textContent.trim() || '';
+      if (!labelText) return '';
+
+      const fontSize = numberValue(el.dataset.drawioLabelSize || text.getAttribute('font-size'), 11);
+      const fontWeight = el.dataset.drawioLabelWeight || text.getAttribute('font-weight') || '400';
+      const align = textAlignFromAnchor(text);
+      const estimatedWidth = Math.max(fontSize * 3, labelText.length * fontSize * 0.62);
+      const width = numberValue(el.dataset.drawioLabelWidth || text.dataset?.drawioWidth, estimatedWidth);
+      const height = numberValue(el.dataset.drawioLabelHeight || text.dataset?.drawioHeight, fontSize * 1.45);
+      const textX = attrNumber(text, 'x');
+      const textY = attrNumber(text, 'y');
+      const hasExplicitX = Boolean(el.dataset.drawioLabelX || text.dataset?.drawioX);
+      let x = numberValue(el.dataset.drawioLabelX || text.dataset?.drawioX, textX);
+      if (!hasExplicitX) {
+        if (align === 'center') x -= width / 2;
+        if (align === 'right') x -= width;
+      }
+      const y = numberValue(el.dataset.drawioLabelY || text.dataset?.drawioY, textY - fontSize);
+      const color = text.getAttribute('fill') || el.dataset.drawioLabelColor || '#6F6C65';
+      const style = cellStyle([
+        'text',
+        'html=1',
+        'strokeColor=none',
+        'fillColor=none',
+        'whiteSpace=wrap',
+        'rounded=0',
+        `align=${align}`,
+        'verticalAlign=middle',
+        'fontFamily=Montserrat',
+        `fontSize=${fontSize}`,
+        `fontColor=${color}`,
+        `fontStyle=${fontStyleValueFromWeight(fontWeight)}`,
+        drawioRoleStyle(el)
+      ]);
+
+      return `<mxCell id="${xmlEscape(edgeId)}-label" data-drawio-edge-label-for="${xmlEscape(edgeId)}" value="${xmlEscape(labelText)}" style="${xmlEscape(style)}" vertex="1" parent="1"><mxGeometry x="${drawioNumber(x - origin.x)}" y="${drawioNumber(y - origin.y)}" width="${drawioNumber(width)}" height="${drawioNumber(height)}" as="geometry"/></mxCell>`;
+    }
+
+    function buildEdgeCell(el, index, origin = { x: 0, y: 0 }) {
+      const shape = firstDrawioShape(el, ['line', 'path', 'polyline']);
+      if (!shape) return '';
+
+      const points = pointsFromShape(shape);
+      if (points.length < 2) return '';
+
+      const labelTextElement = edgeLabelTextElement(el, shape);
+      const labelText = labelTextElement ? '' : (el.dataset.drawioLabel || '');
+      const label = xmlEscape(labelText);
+      const labelFontSize = labelTextElement?.getAttribute('font-size') || '11';
+      const labelFontColor = labelTextElement?.getAttribute('fill') || '#6F6C65';
+      const labelFontWeight = labelTextElement?.getAttribute('font-weight') || '';
+      const stroke = shape.getAttribute('stroke') || '#9A9991';
+      const strokeWidth = shape.getAttribute('stroke-width') || '1.6';
+      const curved = shapeUsesCurveCommand(shape);
+      const id = drawioId(el, index);
+      const translatedPoints = points.map((point) => ({
+        x: point.x - origin.x,
+        y: point.y - origin.y
+      }));
+      const start = translatedPoints[0];
+      const end = translatedPoints[translatedPoints.length - 1];
+      const waypoints = translatedPoints.slice(1, -1)
+        .map((point) => `<mxPoint x="${drawioNumber(point.x)}" y="${drawioNumber(point.y)}"/>`)
+        .join('');
+      const waypointXml = waypoints ? `<Array as="points">${waypoints}</Array>` : '';
+      const style = cellStyle([
+        'edgeStyle=none',
+        curved ? 'curved=1' : '',
+        curved ? 'rounded=0' : 'rounded=1',
+        'html=1',
+        ...edgeMarkerStyle(shape),
+        'fontFamily=Montserrat',
+        `fontSize=${labelFontSize}`,
+        `fontColor=${labelFontColor}`,
+        `fontStyle=${fontStyleValueFromWeight(labelFontWeight)}`,
+        `strokeColor=${stroke}`,
+        `strokeWidth=${strokeWidth}`,
+        ...drawioDashStyle(shape),
+        drawioRoleStyle(el)
+      ]);
+
+      const edgeCell = `<mxCell id="${xmlEscape(id)}"${edgeTerminalAttributes(el)} value="${label}" style="${xmlEscape(style)}" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="${drawioNumber(start.x)}" y="${drawioNumber(start.y)}" as="sourcePoint"/><mxPoint x="${drawioNumber(end.x)}" y="${drawioNumber(end.y)}" as="targetPoint"/>${waypointXml}</mxGeometry></mxCell>`;
+      return `${edgeCell}${buildEdgeLabelCell(el, id, labelTextElement, origin)}`;
+    }
+
+    function buildDrawioFromSvg(svg, options = {}) {
+      const fallbackDocumentTitle = typeof document !== 'undefined' ? document.title : '';
+      const title = options.title || svg.querySelector('title')?.textContent.trim() || fallbackDocumentTitle || 'Diagram';
+      const viewBox = svgViewBox(svg);
+      const offset = options.offset || {};
+      const offsetX = numberValue(offset.x, 0);
+      const offsetY = numberValue(offset.y, 0);
+      const pageWidth = drawioNumber(numberValue(options.pageWidth, viewBox.width + offsetX));
+      const pageHeight = drawioNumber(numberValue(options.pageHeight, viewBox.height + offsetY));
+      const origin = { x: viewBox.x - offsetX, y: viewBox.y - offsetY };
+      const prependCells = Array.isArray(options.prependCells) ? options.prependCells : [];
+      const cells = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>', ...prependCells];
+      const coverageWarnings = auditDrawioCoverage(svg);
+
+      if (coverageWarnings.length) {
+        if (typeof options.onCoverageWarning === 'function') options.onCoverageWarning(coverageWarnings);
+        if (options.strictCoverage !== false) {
+          throw new Error(`Draw.io coverage audit failed:\n${coverageWarnings.join('\n')}`);
+        }
+      }
+
+      Array.from(svg.querySelectorAll('[data-drawio-type]'))
+        .filter((group) => !drawioIgnored(group))
+        .forEach((group, index) => {
+        if (group.dataset.drawioType === 'edge') {
+          cells.push(buildEdgeCell(group, index + 2, origin));
+          return;
+        }
+
+        if (group.dataset.drawioType === 'label') {
+          cells.push(buildLabelCell(group, index + 2, origin));
+          return;
+        }
+
+        if (group.dataset.drawioType === 'shape') {
+          cells.push(buildShapeCell(group, index + 2, origin));
+          return;
+        }
+
+        if (group.dataset.drawioType === 'component' || group.dataset.drawioType === 'boundary') {
+          const id = drawioId(group, index + 2);
+          const rect = firstDrawioShape(group, ['rect']);
+          cells.push(buildBoxCell(group, index + 2, origin));
+          if (rect) cells.push(...buildInternalPrimitiveCells(group, rect, id, origin));
+        }
+      });
+
+      const model = `<mxGraphModel dx="${xmlEscape(pageWidth)}" dy="${xmlEscape(pageHeight)}" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="${xmlEscape(pageWidth)}" pageHeight="${xmlEscape(pageHeight)}" math="0" shadow="0"><root>${cells.filter(Boolean).join('')}</root></mxGraphModel>`;
+      return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="app.diagrams.net" agent="Cloudy Tech Diagrams" cloudyDrawioExporterVersion="${xmlEscape(CLOUDY_DRAWIO_EXPORTER_VERSION)}" modified="${new Date().toISOString()}" type="device"><diagram id="cloudy-tech-diagram" name="${xmlEscape(title)}">${model}</diagram></mxfile>`;
+    }
+
+    function reportText(root, selector) {
+      return root.querySelector(selector)?.textContent.trim() || '';
+    }
+
+    function buildReportTextCell({ id, value, x, y, width, height, fontSize, fontColor, fontWeight }) {
+      if (!value) return '';
+
+      const style = cellStyle([
+        'text',
+        'html=1',
+        'strokeColor=none',
+        'fillColor=none',
+        'whiteSpace=wrap',
+        'rounded=0',
+        'align=center',
+        'verticalAlign=middle',
+        'fontFamily=Montserrat',
+        `fontSize=${fontSize}`,
+        `fontColor=${fontColor}`,
+        `fontStyle=${fontStyleValueFromWeight(fontWeight)}`,
+        `cloudyRole=${id}`
+      ]);
+
+      return `<mxCell id="${xmlEscape(id)}" value="${xmlEscape(value)}" style="${xmlEscape(style)}" vertex="1" parent="1"><mxGeometry x="${drawioNumber(x)}" y="${drawioNumber(y)}" width="${drawioNumber(width)}" height="${drawioNumber(height)}" as="geometry"/></mxCell>`;
+    }
+
+    function buildReportHeaderCells(title, subtitle, pageWidth) {
+      const subtitleInset = Math.min(80, Math.max(0, pageWidth * 0.08));
+      return [
+        buildReportTextCell({
+          id: 'report-title',
+          value: title,
+          x: 0,
+          y: 0,
+          width: pageWidth,
+          height: 52,
+          fontSize: 42,
+          fontColor: '#141413',
+          fontWeight: '700'
+        }),
+        buildReportTextCell({
+          id: 'report-subtitle',
+          value: subtitle,
+          x: subtitleInset,
+          y: 58,
+          width: pageWidth - (subtitleInset * 2),
+          height: 24,
+          fontSize: 15,
+          fontColor: '#6F6C65',
+          fontWeight: '400'
+        })
+      ].filter(Boolean);
+    }
+
+    function reportHeaderHeight(title, subtitle) {
+      if (!title) return 0;
+      return subtitle ? 104 : 72;
+    }
+
+    function buildDrawioReportFromDocument(root = document, options = {}) {
+      const svg = root.querySelector('.diagram-container svg');
+      if (!svg) throw new Error('Draw.io report export requires .diagram-container svg');
+
+      const viewBox = svgViewBox(svg);
+      const title = reportText(root, '.header h1');
+      const subtitle = reportText(root, '.subtitle');
+      const pageWidth = numberValue(options.pageWidth, viewBox.width);
+      const headerHeight = reportHeaderHeight(title, subtitle);
+      const headerCells = buildReportHeaderCells(title, subtitle, pageWidth);
+      const prependCells = Array.isArray(options.prependCells) ? options.prependCells : [];
+
+      return buildDrawioFromSvg(svg, {
+        ...options,
+        title: title || options.title,
+        pageWidth,
+        pageHeight: numberValue(options.pageHeight, viewBox.height + headerHeight),
+        offset: { x: 0, y: headerHeight },
+        prependCells: [...headerCells, ...prependCells]
+      });
+    }
+
+    function downloadTextFile(filename, content, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.download = filename;
+      link.href = url;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function downloadDrawio(btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Preparing';
+      try {
+        const mxfile = buildDrawioReportFromDocument(document, {
+          strictCoverage: false,
+          onCoverageWarning: (warnings) => console.warn('Draw.io coverage audit warnings', warnings)
+        });
+        downloadTextFile('diagram.drawio', mxfile, 'application/xml');
+        btn.textContent = 'Done';
+      } catch (e) {
+        console.warn('Draw.io export failed', e);
+        btn.textContent = 'Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+  </script>
+</body>
+</html>
