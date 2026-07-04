@@ -233,13 +233,13 @@
           <button type="button" role="menuitem" onclick="downloadDrawio(this)">Download Draw.io</button>
         </div>
       </div>
-      <p class="subtitle">Current code path: local IndexedDB scan, cache and remote hydration, incremental sync, inline table rewrite during export, and tag-driven release packaging.</p>
+      <p class="subtitle">Simplified architecture view focused on the normal sync path from local Wiz data into an Obsidian vault.</p>
     </header>
 
     <main class="diagram-container">
-      <svg viewBox="0 0 1400 900" role="img" aria-labelledby="diagram-title diagram-desc">
-        <title id="diagram-title">Wiz To Obsidian current architecture</title>
-        <desc id="diagram-desc">Technical architecture for the current Wiz To Obsidian repository, showing entry points, local scan, hydration adapters, incremental sync and export, Obsidian outputs, and the GitHub release workflow.</desc>
+      <svg viewBox="0 0 1280 760" role="img" aria-labelledby="diagram-title diagram-desc">
+        <title id="diagram-title">Wiz To Obsidian simplified architecture</title>
+        <desc id="diagram-desc">Simplified technical architecture showing the core Wiz To Obsidian flow: trigger, CLI entry, local scan, hydration, incremental sync, export, and Obsidian output, with only the key supporting data sources.</desc>
 
         <defs>
           <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
@@ -247,320 +247,138 @@
           </marker>
         </defs>
 
-        <rect width="1400" height="900" rx="18" fill="#FAF9F5" data-drawio-ignore="true" data-drawio-ignore-reason="paper background is represented by the draw.io page"/>
+        <rect width="1280" height="760" rx="18" fill="#FAF9F5" data-drawio-ignore="true" data-drawio-ignore-reason="paper background is represented by the draw.io page"/>
 
         <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="entry-boundary">
-          <rect x="40" y="88" width="250" height="458" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
-          <text x="60" y="118" fill="#6F6C65" font-size="13" font-weight="600">Entry / Orchestration</text>
+          <rect x="40" y="110" width="220" height="250" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="60" y="140" fill="#6F6C65" font-size="13" font-weight="600">Entry / Control</text>
         </g>
 
         <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="core-boundary">
-          <rect x="320" y="88" width="760" height="540" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
-          <text x="340" y="118" fill="#6F6C65" font-size="13" font-weight="600">Core Pipeline</text>
+          <rect x="290" y="110" width="700" height="350" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="310" y="140" fill="#6F6C65" font-size="13" font-weight="600">Core Pipeline</text>
         </g>
 
         <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="sources-boundary">
-          <rect x="1110" y="88" width="250" height="458" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
-          <text x="1130" y="118" fill="#6F6C65" font-size="13" font-weight="600">Wiz Local + Remote Sources</text>
+          <rect x="1010" y="110" width="230" height="350" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="1030" y="140" fill="#6F6C65" font-size="13" font-weight="600">Wiz Sources</text>
         </g>
 
-        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="outputs-boundary">
-          <rect x="320" y="660" width="680" height="132" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
-          <text x="340" y="690" fill="#6F6C65" font-size="13" font-weight="600">Obsidian Export</text>
+        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="output-boundary">
+          <rect x="290" y="500" width="700" height="140" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="310" y="530" fill="#6F6C65" font-size="13" font-weight="600">Obsidian Output</text>
         </g>
 
-        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="release-boundary">
-          <rect x="1055" y="575" width="305" height="217" rx="24" fill="#F6F3EC" stroke="#B8B3AA" stroke-width="1.5" stroke-dasharray="8 6"/>
-          <text x="1075" y="605" fill="#6F6C65" font-size="13" font-weight="600">GitHub Release Path</text>
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="trigger-to-cli">
+          <line x1="150" y1="230" x2="150" y2="255" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
         </g>
 
-        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="local-scan-panel">
-          <rect x="350" y="145" width="220" height="220" rx="20" fill="#FAF9F5" stroke="#C9C3B8" stroke-width="1.5" stroke-dasharray="6 6"/>
-          <text x="368" y="171" fill="#6F6C65" font-size="13" font-weight="600">Local scan</text>
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="cli-to-scan">
+          <path d="M 240 294 C 285 294, 305 278, 330 269" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
         </g>
 
-        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="hydration-panel">
-          <rect x="600" y="145" width="220" height="260" rx="20" fill="#FAF9F5" stroke="#C9C3B8" stroke-width="1.5" stroke-dasharray="6 6"/>
-          <text x="618" y="171" fill="#6F6C65" font-size="13" font-weight="600">Hydration</text>
-        </g>
-
-        <g data-drawio-type="boundary" data-drawio-role="runtime-boundary" data-drawio-id="export-panel">
-          <rect x="850" y="145" width="200" height="435" rx="20" fill="#FAF9F5" stroke="#C9C3B8" stroke-width="1.5" stroke-dasharray="6 6"/>
-          <text x="868" y="171" fill="#6F6C65" font-size="13" font-weight="600">Sync + export</text>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="user-to-script">
-          <line x1="165" y1="224" x2="165" y2="260" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
-          <text x="183" y="247" fill="#6F6C65" font-size="11" font-weight="500">run</text>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="script-to-cli">
-          <line x1="165" y1="350" x2="165" y2="380" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="cli-to-local">
-          <path d="M 260 432 C 320 408, 346 312, 378 234" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="318" y="334" fill="#6F6C65" font-size="11" font-weight="500">orchestrates scan</text>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="local-to-indexeddb">
-          <path d="M 542 220 C 690 165, 930 150, 1145 197" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="835" y="158" fill="#6F6C65" font-size="11" font-weight="500">leveldb / blob records</text>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="local-to-hydration">
-          <line x1="542" y1="234" x2="625" y2="234" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
-          <text x="584" y="219" fill="#6F6C65" font-size="11" font-weight="500" text-anchor="middle">Inventory</text>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="carrier" data-drawio-id="cache-source-to-adapter">
-          <path d="M 1145 318 C 1035 312, 900 322, 702 338" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="933" y="304" fill="#6F6C65" font-size="11" font-weight="500">snapshot cache</text>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="carrier" data-drawio-id="remote-source-to-adapter">
-          <path d="M 1145 447 C 1045 435, 945 375, 800 338" fill="none" stroke="#D87858" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="981" y="388" fill="#6F6C65" font-size="11" font-weight="500">HTTPS / websocket</text>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="cache-to-hydration">
-          <path d="M 661 310 C 670 292, 684 281, 699 272" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="remote-to-hydration">
-          <path d="M 759 310 C 752 292, 740 281, 724 272" fill="none" stroke="#D87858" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-        </g>
-
-        <g data-drawio-type="edge" data-drawio-role="support-flow" data-drawio-id="remote-to-sync-version-check">
-          <path d="M 800 330 C 830 315, 846 272, 870 238" fill="none" stroke="#76B985" stroke-width="1.6" stroke-dasharray="6 6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="848" y="295" fill="#6F6C65" font-size="11" font-weight="500">remote version check</text>
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="scan-to-hydration">
+          <line x1="470" y1="269" x2="500" y2="269" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
         </g>
 
         <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="hydration-to-sync">
-          <line x1="795" y1="221" x2="870" y2="221" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
-          <text x="833" y="206" fill="#6F6C65" font-size="11" font-weight="500" text-anchor="middle">hydrated inventory</text>
+          <line x1="640" y1="269" x2="670" y2="269" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="sync-to-exporter">
-          <line x1="950" y1="262" x2="950" y2="292" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="sync-to-export">
+          <line x1="810" y1="269" x2="840" y2="269" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="exporter-to-markdown">
-          <line x1="950" y1="366" x2="950" y2="392" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="export-to-output">
+          <path d="M 905 308 C 880 395, 790 485, 730 536" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="842" y="415" fill="#6F6C65" font-size="11" font-weight="500">write vault output</text>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="transformation" data-drawio-id="markdown-to-table">
-          <line x1="950" y1="466" x2="950" y2="496" stroke="#BFA777" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        <g data-drawio-type="edge" data-drawio-role="carrier" data-drawio-id="indexeddb-to-scan">
+          <path d="M 1045 211 C 910 176, 690 184, 470 251" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="772" y="182" fill="#6F6C65" font-size="11" font-weight="500">read local records</text>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="observable-output" data-drawio-id="table-to-markdown-output">
-          <path d="M 865 511 C 760 560, 610 635, 520 733" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="695" y="600" fill="#6F6C65" font-size="11" font-weight="500">final markdown</text>
+        <g data-drawio-type="edge" data-drawio-role="carrier" data-drawio-id="cache-to-hydration">
+          <path d="M 1045 324 C 915 308, 790 305, 640 282" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="observable-output" data-drawio-id="exporter-to-assets-output">
-          <path d="M 1030 329 C 1080 430, 940 620, 770 733" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="953" y="570" fill="#6F6C65" font-size="11" font-weight="500">assets</text>
+        <g data-drawio-type="edge" data-drawio-role="carrier" data-drawio-id="remote-to-hydration">
+          <path d="M 1045 418 C 920 395, 780 340, 640 294" fill="none" stroke="#D87858" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+          <text x="860" y="363" fill="#6F6C65" font-size="11" font-weight="500">fill missing content</text>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="state-store" data-drawio-id="sync-to-state-output">
-          <path d="M 1030 221 C 1086 336, 1070 610, 990 733" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="1060" y="566" fill="#6F6C65" font-size="11" font-weight="500">state + report</text>
+        <g data-drawio-type="component" data-drawio-role="trigger" data-drawio-id="user-trigger">
+          <rect x="72" y="165" width="156" height="64" rx="14" fill="#EDEAE3" stroke="#9A9991" stroke-width="2"/>
+          <text x="150" y="191" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">User / Scheduler</text>
+          <text x="150" y="211" fill="#5F5A54" font-size="12" text-anchor="middle">manual or scheduled sync</text>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="observable-output" data-drawio-id="audit-to-state-output">
-          <path d="M 1030 552 C 1045 612, 1032 680, 990 747" fill="none" stroke="#6A9BCC" stroke-width="1.6" stroke-dasharray="6 6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="1042" y="646" fill="#6F6C65" font-size="11" font-weight="500">audit files</text>
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="cli-entry">
+          <rect x="60" y="255" width="180" height="78" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="150" y="285" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">CLI Entry</text>
+          <text x="150" y="306" fill="#5F5A54" font-size="12" text-anchor="middle">sync script + cli.py</text>
+          <text x="150" y="324" fill="#6F6C65" font-size="11" text-anchor="middle">commands and env wiring</text>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="support-flow" data-drawio-id="cli-to-postprocess">
-          <line x1="165" y1="478" x2="165" y2="502" stroke="#BFA777" stroke-width="1.6" stroke-dasharray="5 5" stroke-linecap="round" marker-end="url(#arrowhead)"/>
-          <text x="189" y="495" fill="#6F6C65" font-size="11" font-weight="500">rewrite-tables</text>
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="local-scan">
+          <rect x="330" y="230" width="140" height="78" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="400" y="260" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Local Scan</text>
+          <text x="400" y="281" fill="#5F5A54" font-size="12" text-anchor="middle">wiz_local.py</text>
+          <text x="400" y="299" fill="#6F6C65" font-size="11" text-anchor="middle">notes and metadata</text>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="support-flow" data-drawio-id="postprocess-to-table">
-          <path d="M 244 530 C 430 578, 650 548, 865 511" fill="none" stroke="#BFA777" stroke-width="1.6" stroke-dasharray="5 5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="562" y="586" fill="#6F6C65" font-size="11" font-weight="500">standalone table pass</text>
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="hydration-stage">
+          <rect x="500" y="230" width="140" height="78" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="570" y="260" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Hydration</text>
+          <text x="570" y="281" fill="#5F5A54" font-size="12" text-anchor="middle">wiz_hydration.py</text>
+          <text x="570" y="299" fill="#6F6C65" font-size="11" text-anchor="middle">bodies, assets, attachments</text>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="causal-flow" data-drawio-id="tag-to-workflow">
-          <line x1="1197" y1="647" x2="1215" y2="647" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="sync-stage">
+          <rect x="670" y="230" width="140" height="78" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="740" y="260" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Incremental Sync</text>
+          <text x="740" y="281" fill="#5F5A54" font-size="12" text-anchor="middle">sync.py</text>
+          <text x="740" y="299" fill="#6F6C65" font-size="11" text-anchor="middle">state and change planning</text>
         </g>
 
-        <g data-drawio-type="edge" data-drawio-role="observable-output" data-drawio-id="workflow-to-release">
-          <path d="M 1275 693 C 1275 730, 1248 748, 1208 772" fill="none" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
-          <text x="1294" y="734" fill="#6F6C65" font-size="11" font-weight="500">GitHub Release</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="trigger" data-drawio-id="user-scheduler">
-          <rect x="78" y="150" width="174" height="74" rx="14" fill="#EDEAE3" stroke="#9A9991" stroke-width="2"/>
-          <text x="165" y="182" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">User / Scheduler</text>
-          <text x="165" y="204" fill="#5F5A54" font-size="12" text-anchor="middle">manual run or cron</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="sync-script">
-          <rect x="70" y="266" width="190" height="84" rx="14" fill="#EDEAE3" stroke="#9A9991" stroke-width="2"/>
-          <text x="165" y="298" fill="#3D3C38" font-size="13" font-weight="600" text-anchor="middle">sync_wiz_to_obsidian.py</text>
-          <text x="165" y="319" fill="#5F5A54" font-size="12" text-anchor="middle">scripts/ wrapper</text>
-          <text x="165" y="338" fill="#6F6C65" font-size="11" text-anchor="middle">load dotenv + subprocess</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="cli-module">
-          <rect x="70" y="386" width="190" height="92" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
-          <text x="165" y="419" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">wiz_to_obsidian.cli</text>
-          <text x="165" y="441" fill="#5F5A54" font-size="12" text-anchor="middle">scan / export / sync</text>
-          <text x="165" y="460" fill="#6F6C65" font-size="11" text-anchor="middle">rewrite-tables command</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="transformation" data-drawio-id="postprocess-module">
-          <rect x="86" y="502" width="158" height="56" rx="14" fill="#E6D7B4" stroke="#BFA777" stroke-width="1.5"/>
-          <text x="165" y="527" fill="#3D3C38" font-size="13" font-weight="600" text-anchor="middle">postprocess.py</text>
-          <text x="165" y="545" fill="#5F5A54" font-size="11" text-anchor="middle">rewrite_tables</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="wiz-local-module">
-          <rect x="378" y="195" width="164" height="78" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
-          <text x="460" y="227" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">wiz_local.py</text>
-          <text x="460" y="249" fill="#5F5A54" font-size="12" text-anchor="middle">scan_local_wiz / metadata</text>
-          <text x="460" y="268" fill="#6F6C65" font-size="11" text-anchor="middle">IndexedDB -&gt; Inventory</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="models-module">
-          <rect x="378" y="304" width="76" height="50" rx="12" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1.5"/>
-          <text x="416" y="334" fill="#3D3C38" font-size="13" font-weight="600" text-anchor="middle">models.py</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="config-module">
-          <rect x="466" y="304" width="76" height="50" rx="12" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1.5"/>
-          <text x="504" y="334" fill="#3D3C38" font-size="13" font-weight="600" text-anchor="middle">config.py</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="hydration-module">
-          <rect x="625" y="190" width="170" height="82" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
-          <text x="710" y="223" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">wiz_hydration.py</text>
-          <text x="710" y="245" fill="#5F5A54" font-size="12" text-anchor="middle">hydrate_inventory</text>
-          <text x="710" y="264" fill="#6F6C65" font-size="11" text-anchor="middle">CompositeWizContentClient</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="cache-module">
-          <rect x="620" y="310" width="82" height="56" rx="12" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1.5"/>
-          <text x="661" y="334" fill="#3D3C38" font-size="12" font-weight="600" text-anchor="middle">wiz_cache.py</text>
-          <text x="661" y="350" fill="#5F5A54" font-size="10" text-anchor="middle">cache reader</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="remote-module">
-          <rect x="718" y="310" width="82" height="56" rx="12" fill="#F0DED7" stroke="#D87858" stroke-width="1.5"/>
-          <text x="759" y="334" fill="#3D3C38" font-size="12" font-weight="600" text-anchor="middle">wiz_remote.py</text>
-          <text x="759" y="350" fill="#5F5A54" font-size="10" text-anchor="middle">remote client</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="sync-module">
-          <rect x="870" y="180" width="160" height="82" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
-          <text x="950" y="211" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">sync.py</text>
-          <text x="950" y="233" fill="#5F5A54" font-size="12" text-anchor="middle">load / rebuild state</text>
-          <text x="950" y="252" fill="#6F6C65" font-size="11" text-anchor="middle">plan_incremental_sync</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="exporter-module">
-          <rect x="870" y="292" width="160" height="74" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
-          <text x="950" y="322" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">exporter.py</text>
-          <text x="950" y="344" fill="#5F5A54" font-size="12" text-anchor="middle">write notes / assets</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="markdown-export-module">
-          <rect x="870" y="392" width="160" height="74" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
-          <text x="950" y="422" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">markdown_export.py</text>
-          <text x="950" y="444" fill="#5F5A54" font-size="11" text-anchor="middle">render HTML + collaboration</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="transformation" data-drawio-id="table-markdown-module">
-          <rect x="865" y="496" width="170" height="30" rx="15" fill="#E6D7B4" stroke="#BFA777" stroke-width="1.5"/>
-          <text x="950" y="515" fill="#5F5A54" font-size="11" font-weight="600" text-anchor="middle">table_markdown.py</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="audit-reporting-module">
-          <rect x="870" y="536" width="160" height="44" rx="12" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1.5"/>
-          <text x="950" y="555" fill="#3D3C38" font-size="12" font-weight="600" text-anchor="middle">content_audit.py</text>
-          <text x="950" y="571" fill="#5F5A54" font-size="11" text-anchor="middle">reporting.py</text>
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="export-stage">
+          <rect x="840" y="230" width="140" height="78" rx="14" fill="#D8E8D8" stroke="#76B985" stroke-width="2"/>
+          <text x="910" y="260" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Export</text>
+          <text x="910" y="281" fill="#5F5A54" font-size="12" text-anchor="middle">exporter.py + markdown_export.py</text>
+          <text x="910" y="299" fill="#6F6C65" font-size="11" text-anchor="middle">markdown, assets, table rewrite</text>
         </g>
 
         <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="indexeddb-source">
-          <rect x="1145" y="160" width="180" height="74" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
-          <text x="1235" y="190" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">IndexedDB + blob</text>
-          <text x="1235" y="212" fill="#5F5A54" font-size="12" text-anchor="middle">local Wiz desktop data</text>
+          <rect x="1045" y="175" width="160" height="72" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
+          <text x="1125" y="204" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">IndexedDB + blob</text>
+          <text x="1125" y="225" fill="#5F5A54" font-size="12" text-anchor="middle">local Wiz desktop data</text>
         </g>
 
-        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="chromium-cache-source">
-          <rect x="1145" y="281" width="180" height="74" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
-          <text x="1235" y="311" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Chromium cache</text>
-          <text x="1235" y="333" fill="#5F5A54" font-size="12" text-anchor="middle">cache snapshot hydration</text>
+        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="cache-source">
+          <rect x="1045" y="289" width="160" height="70" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
+          <text x="1125" y="317" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Chromium cache</text>
+          <text x="1125" y="337" fill="#5F5A54" font-size="12" text-anchor="middle">fast local hydration</text>
         </g>
 
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="wiz-remote-source">
-          <rect x="1145" y="402" width="180" height="90" rx="14" fill="#F0DED7" stroke="#D87858" stroke-width="2"/>
-          <text x="1235" y="432" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Wiz account + KS APIs</text>
-          <text x="1235" y="454" fill="#5F5A54" font-size="12" text-anchor="middle">note / object download</text>
-          <text x="1235" y="473" fill="#6F6C65" font-size="11" text-anchor="middle">editor websocket snapshot</text>
+        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="remote-source">
+          <rect x="1045" y="382" width="160" height="72" rx="14" fill="#F0DED7" stroke="#D87858" stroke-width="2"/>
+          <text x="1125" y="410" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Wiz remote APIs</text>
+          <text x="1125" y="431" fill="#5F5A54" font-size="12" text-anchor="middle">fallback and collaboration</text>
         </g>
 
-        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="markdown-output">
-          <rect x="350" y="697" width="170" height="72" rx="14" fill="#E0E0F0" stroke="#8585DD" stroke-width="2"/>
-          <text x="435" y="727" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Markdown tree</text>
-          <text x="435" y="749" fill="#5F5A54" font-size="12" text-anchor="middle">folder-preserving notes</text>
+        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="obsidian-output">
+          <rect x="470" y="545" width="340" height="72" rx="14" fill="#E0E0F0" stroke="#8585DD" stroke-width="2"/>
+          <text x="640" y="573" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">Obsidian Vault Output</text>
+          <text x="640" y="594" fill="#5F5A54" font-size="12" text-anchor="middle">Markdown tree + _wiz assets + state / reports</text>
         </g>
 
-        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="asset-output">
-          <rect x="545" y="697" width="225" height="72" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
-          <text x="657.5" y="727" fill="#3D3C38" font-size="15" font-weight="600" text-anchor="middle">_wiz/resources + attachments</text>
-          <text x="657.5" y="749" fill="#5F5A54" font-size="12" text-anchor="middle">binary sidecars for notes</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="state-store" data-drawio-id="state-output">
-          <rect x="795" y="697" width="195" height="72" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
-          <text x="892.5" y="722" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">_wiz/state.json + report.json</text>
-          <text x="892.5" y="742" fill="#5F5A54" font-size="11" text-anchor="middle">content_audit.json / .md</text>
-          <text x="892.5" y="758" fill="#6F6C65" font-size="10" text-anchor="middle">incremental sync bookkeeping</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="trigger" data-drawio-id="release-tag-trigger">
-          <rect x="1085" y="615" width="112" height="64" rx="14" fill="#EDEAE3" stroke="#9A9991" stroke-width="2"/>
-          <text x="1141" y="641" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">git tag v*</text>
-          <text x="1141" y="660" fill="#5F5A54" font-size="11" text-anchor="middle">push trigger</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="participant" data-drawio-id="release-workflow">
-          <rect x="1215" y="615" width="120" height="78" rx="14" fill="#F0DED7" stroke="#D87858" stroke-width="2"/>
-          <text x="1275" y="644" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">release.yml</text>
-          <text x="1275" y="663" fill="#5F5A54" font-size="11" text-anchor="middle">pytest + PyInstaller</text>
-          <text x="1275" y="680" fill="#6F6C65" font-size="10" text-anchor="middle">tag-only workflow</text>
-        </g>
-
-        <g data-drawio-type="component" data-drawio-role="observable-output" data-drawio-id="release-zips">
-          <rect x="1098" y="739" width="220" height="66" rx="14" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="2"/>
-          <text x="1208" y="765" fill="#3D3C38" font-size="14" font-weight="600" text-anchor="middle">GitHub Release ZIPs</text>
-          <text x="1208" y="784" fill="#5F5A54" font-size="11" text-anchor="middle">windows / macOS / linux x64</text>
-        </g>
-
-        <text data-drawio-type="label" data-drawio-role="legend" data-drawio-id="legend-heading" data-drawio-width="70" data-drawio-height="18" x="50" y="820" fill="#3D3C38" font-size="13" font-weight="700">Legend</text>
-        <rect data-drawio-type="shape" data-drawio-role="legend-swatch" data-drawio-id="legend-neutral" x="50" y="836" width="18" height="11" rx="3" fill="#EDEAE3" stroke="#9A9991" stroke-width="1"/>
-        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-neutral-label" data-drawio-width="94" data-drawio-height="16" x="76" y="845" fill="#6F6C65" font-size="11">Entry / trigger</text>
-        <rect data-drawio-type="shape" data-drawio-role="legend-swatch" data-drawio-id="legend-backend" x="188" y="836" width="18" height="11" rx="3" fill="#D8E8D8" stroke="#76B985" stroke-width="1"/>
-        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-backend-label" data-drawio-width="90" data-drawio-height="16" x="214" y="845" fill="#6F6C65" font-size="11">Python module</text>
-        <rect data-drawio-type="shape" data-drawio-role="legend-swatch" data-drawio-id="legend-data" x="328" y="836" width="18" height="11" rx="3" fill="#E4EEF4" stroke="#6A9BCC" stroke-width="1"/>
-        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-data-label" data-drawio-width="90" data-drawio-height="16" x="354" y="845" fill="#6F6C65" font-size="11">Data / artifact</text>
-        <rect data-drawio-type="shape" data-drawio-role="legend-swatch" data-drawio-id="legend-cloud" x="470" y="836" width="18" height="11" rx="3" fill="#F0DED7" stroke="#D87858" stroke-width="1"/>
-        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-cloud-label" data-drawio-width="110" data-drawio-height="16" x="496" y="845" fill="#6F6C65" font-size="11">External / CI path</text>
-        <line data-drawio-type="edge" data-drawio-role="legend-flow" data-drawio-id="legend-primary-flow" x1="636" y1="842" x2="668" y2="842" stroke="#9A9991" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowhead)"/>
-        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-primary-label" data-drawio-width="78" data-drawio-height="16" x="678" y="845" fill="#6F6C65" font-size="11">Main flow</text>
-        <path data-drawio-type="edge" data-drawio-role="legend-flow" data-drawio-id="legend-support-flow" d="M 784 842 C 796 834, 812 834, 824 842" fill="none" stroke="#BFA777" stroke-width="1.6" stroke-dasharray="5 5" stroke-linecap="round" marker-end="url(#arrowhead)"/>
-        <text data-drawio-type="label" data-drawio-role="legend-label" data-drawio-id="legend-support-label" data-drawio-width="106" data-drawio-height="16" x="838" y="845" fill="#6F6C65" font-size="11">Support / rewrite</text>
-
-        <rect data-drawio-type="shape" data-drawio-role="scope-note" data-drawio-id="scope-note-box" x="50" y="852" width="930" height="28" rx="12" fill="#F6F3EC" stroke="#C9C3B8" stroke-width="1"/>
-        <text data-drawio-type="label" data-drawio-role="scope-note" data-drawio-id="scope-note-text" data-drawio-width="900" data-drawio-height="18" x="66" y="871" fill="#6F6C65" font-size="11" font-weight="500">Scope: current repo runtime path. The release workflow is tag-only and separate from the normal sync and export execution path.</text>
+        <rect data-drawio-type="shape" data-drawio-role="scope-note" data-drawio-id="scope-note-box" x="50" y="676" width="890" height="30" rx="12" fill="#F6F3EC" stroke="#C9C3B8" stroke-width="1"/>
+        <text data-drawio-type="label" data-drawio-role="scope-note" data-drawio-id="scope-note-text" data-drawio-width="860" data-drawio-height="18" x="66" y="696" fill="#6F6C65" font-size="11" font-weight="500">Focus: the normal sync runtime path. Omitted for clarity: config/models internals, standalone rewrite-tables flow, content-audit internals, and release packaging.</text>
       </svg>
     </main>
 
-    <p class="footer">Current repository structure rendered on 2026-07-04 from the latest local source tree.</p>
+    <p class="footer">Simplified architecture view rendered from the current local source tree on 2026-07-04.</p>
   </div>
 
   <script>
